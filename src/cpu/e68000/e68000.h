@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/cpu/e68000/e68000.h                                      *
  * Created:     2005-07-17 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2005-2018 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2005-2009 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -39,13 +39,6 @@ struct e68000_s;
  * 68000
  *****************************************************************************/
 
-#define E68_FLAG_NOADDR  1
-#define E68_FLAG_68010   2
-#define E68_FLAG_68020   4
-#define E68_FLAG_NORESET 8
-
-#define E68_LAST_PC_CNT 32
-
 #define E68_SR_C 0x0001
 #define E68_SR_V 0x0002
 #define E68_SR_Z 0x0004
@@ -61,7 +54,6 @@ struct e68000_s;
 #define e68_get_areg16(c, n) (((c)->areg[(n) & 7]) & 0xffff)
 #define e68_get_areg32(c, n) ((c)->areg[(n) & 7] & 0xffffffff)
 #define e68_get_pc(c) ((c)->pc & 0xffffffff)
-#define e68_get_ir_pc(c) ((c)->ir_pc & 0xffffffff)
 #define e68_get_usp(c) (((c)->supervisor ? (c)->usp : (c)->areg[7]) & 0xffffffff)
 #define e68_get_ssp(c) (((c)->supervisor ? (c)->areg[7] : (c)->ssp) & 0xffffffff)
 #define e68_get_sr(c) ((c)->sr & 0xffff)
@@ -69,18 +61,13 @@ struct e68000_s;
 #define e68_get_vbr(c) ((c)->vbr & 0xffffffff)
 #define e68_get_sfc(c) ((c)->sfc & 0x00000003)
 #define e68_get_dfc(c) ((c)->dfc & 0x00000003)
-#define e68_get_cacr(c) ((c)->vbr & 0xffffffff)
-#define e68_get_caar(c) ((c)->vbr & 0xffffffff)
 #define e68_get_ipl(c) ((c)->int_ipl)
 #define e68_get_iml(c) (((c)->sr >> 8) & 7)
 
 #define e68_set_pc(c, v) do { (c)->pc = (v) & 0xffffffff; } while (0)
-#define e68_set_ir_pc(c, v) do { (c)->ir_pc = (v) & 0xffffffff; } while (0)
 #define e68_set_vbr(c, v) do { (c)->vbr = (v) & 0xffffffff; } while (0)
 #define e68_set_sfc(c, v) do { (c)->sfc = (v) & 0x00000003; } while (0)
 #define e68_set_dfc(c, v) do { (c)->dfc = (v) & 0x00000003; } while (0)
-#define e68_set_cacr(c, v) do { (c)->cacr = (v) & 0xffffffff; } while (0)
-#define e68_set_caar(c, v) do { (c)->cacr = (v) & 0xffffffff; } while (0)
 
 #define e68_get_sr_c(c) (((c)->sr & E68_SR_C) != 0)
 #define e68_get_sr_v(c) (((c)->sr & E68_SR_V) != 0)
@@ -104,89 +91,78 @@ struct e68000_s;
 #define e68_set_sr_xc(c, v) e68_set_cc ((c), E68_SR_X | E68_SR_C, (v))
 
 
-typedef void (*e68_opcode_f) (struct e68000_s *c);
+typedef unsigned (*e68_opcode_f) (struct e68000_s *c);
 
 
 typedef struct e68000_s {
-	unsigned       flags;
+	unsigned           flags;
 
-	void           *mem_ext;
+	void               *mem_ext;
 
-	unsigned char  (*get_uint8) (void *ext, unsigned long addr);
-	unsigned short (*get_uint16) (void *ext, unsigned long addr);
-	unsigned long  (*get_uint32) (void *ext, unsigned long addr);
+	unsigned char      (*get_uint8) (void *ext, unsigned long addr);
+	unsigned short     (*get_uint16) (void *ext, unsigned long addr);
+	unsigned long      (*get_uint32) (void *ext, unsigned long addr);
 
-	void           (*set_uint8) (void *ext, unsigned long addr, unsigned char val);
-	void           (*set_uint16) (void *ext, unsigned long addr, unsigned short val);
-	void           (*set_uint32) (void *ext, unsigned long addr, unsigned long val);
+	void               (*set_uint8) (void *ext, unsigned long addr, unsigned char val);
+	void               (*set_uint16) (void *ext, unsigned long addr, unsigned short val);
+	void               (*set_uint32) (void *ext, unsigned long addr, unsigned long val);
 
-	unsigned char  *ram;
-	unsigned long  ram_cnt;
+	unsigned char      *ram;
+	unsigned long      ram_cnt;
 
-	void           *reset_ext;
-	void           (*reset) (void *ext, unsigned char val);
-	unsigned char  reset_val;
+	void               *reset_ext;
+	void               (*reset) (void *ext, unsigned char val);
+	unsigned char      reset_val;
 
-	unsigned char  inta_val;
-	void           *inta_ext;
-	unsigned       (*inta) (void *ext, unsigned level);
+	void               *hook_ext;
+	int                (*hook) (void *ext, unsigned val);
 
-	void           *hook_ext;
-	int            (*hook) (void *ext, unsigned val);
+	void               *log_ext;
+	void               (*log_opcode) (void *ext, unsigned long ir);
+	void               (*log_undef) (void *ext, unsigned long ir);
+	void               (*log_exception) (void *ext, unsigned tn);
+	void               (*log_mem) (void *ext, unsigned long addr, unsigned type);
 
-	void           *log_ext;
-	void           (*log_opcode) (void *ext, unsigned long ir);
-	void           (*log_undef) (void *ext, unsigned long ir);
-	void           (*log_exception) (void *ext, unsigned tn);
-	void           (*log_mem) (void *ext, unsigned long addr, unsigned type);
+	uint32_t           dreg[8];
+	uint32_t           areg[8];
+	uint32_t           pc;
+	uint16_t           sr;
 
-	uint32_t       dreg[8];
-	uint32_t       areg[8];
-	uint32_t       pc;
-	uint32_t       ir_pc;
-	uint16_t       ir[3];
-	uint16_t       sr;
-	uint32_t       usp;
-	uint32_t       ssp;
-	uint32_t       vbr;
-	uint32_t       sfc;
-	uint32_t       dfc;
-	uint32_t       cacr;
-	uint32_t       caar;
+	uint32_t           usp;
+	uint32_t           ssp;
 
-	unsigned       last_pc_idx;
-	uint32_t       last_pc[E68_LAST_PC_CNT];
-	uint16_t       last_trap_a;
-	uint16_t       last_trap_f;
+	uint32_t           vbr;
 
-	uint16_t       trace_sr;
+	uint32_t           sfc;
+	uint32_t           dfc;
 
-	char           supervisor;
-	unsigned char  halt;
-	char           bus_error;
-	char           exception;
+	uint32_t           last_pc;
+	uint16_t           last_trap_a;
+	uint16_t           last_trap_f;
 
-	unsigned       ea_typ;
-	uint32_t       ea_val;
-	unsigned long  ea_bf_ofs;
-	unsigned       ea_bf_width;
-	unsigned char  ea_bf_val[5];
+	char               supervisor;
+	unsigned char      halt;
 
-	unsigned       int_ipl;
-	char           int_nmi;
+	unsigned           ircnt;
+	uint16_t           ir[16];
 
-	unsigned long  delay;
+	unsigned           ea_typ;
+	uint32_t           ea_val;
 
-	unsigned       except_cnt;
-	uint32_t       except_addr;
-	unsigned       except_vect;
-	const char     *except_name;
+	unsigned           int_ipl;
+	char               int_nmi;
+	unsigned           int_vect;
+	int                int_avec;
 
-	unsigned long  oprcnt;
-	unsigned long  clkcnt;
+	unsigned long      delay;
 
-	e68_opcode_f   opcodes[1024];
-	e68_opcode_f   op49c0[8];
+	unsigned           excptn;
+	const char         *excpts;
+
+	unsigned long long oprcnt;
+	unsigned long long clkcnt;
+
+	e68_opcode_f       opcodes[1024];
 } e68000_t;
 
 
@@ -385,8 +361,6 @@ void e68_set_ram (e68000_t *c, unsigned char *ram, unsigned long cnt);
 
 void e68_set_reset_fct (e68000_t *c, void *ext, void *fct);
 
-void e68_set_inta_fct (e68000_t *c, void *ext, void *fct);
-
 void e68_set_hook_fct (e68000_t *c, void *ext, void *fct);
 
 void e68_set_flags (e68000_t *c, unsigned flags, int set);
@@ -397,17 +371,15 @@ void e68_set_68000 (e68000_t *c);
 
 void e68_set_68010 (e68000_t *c);
 
-void e68_set_68020 (e68000_t *c);
-
 /*!***************************************************************************
  * @short Get the number of executed instructions
  *****************************************************************************/
-unsigned long e68_get_opcnt (const e68000_t *c);
+unsigned long long e68_get_opcnt (e68000_t *c);
 
 /*!***************************************************************************
  * @short Get the number of clock cycles
  *****************************************************************************/
-unsigned long e68_get_clkcnt (const e68000_t *c);
+unsigned long long e68_get_clkcnt (e68000_t *c);
 
 /*!***************************************************************************
  * @short Get the previous instruction delay
@@ -417,27 +389,20 @@ unsigned long e68_get_delay (e68000_t *c);
 unsigned e68_get_halt (e68000_t *c);
 void e68_set_halt (e68000_t *c, unsigned val);
 
-void e68_set_bus_error (e68000_t *c, int val);
-
-/*!***************************************************************************
- * @short Get the number of exceptions
- *****************************************************************************/
-unsigned e68_get_exception_cnt (const e68000_t *c);
-
 /*!***************************************************************************
  * @short Get the last exception number
  *****************************************************************************/
-unsigned e68_get_exception (const e68000_t *c);
+unsigned e68_get_exception (e68000_t *c);
 
 /*!***************************************************************************
  * @short Get the last exception name
  *****************************************************************************/
-const char *e68_get_exception_name (const e68000_t *c);
+const char *e68_get_exception_name (e68000_t *c);
 
 /*!***************************************************************************
  * @short Get the last PC
  *****************************************************************************/
-unsigned long e68_get_last_pc (e68000_t *pc, unsigned idx);
+unsigned long e68_get_last_pc (e68000_t *pc);
 
 /*!***************************************************************************
  * @short Get the last a-line trap number
@@ -460,14 +425,8 @@ int e68_get_reg (e68000_t *c, const char *reg, unsigned long *val);
  *****************************************************************************/
 int e68_set_reg (e68000_t *c, const char *reg, unsigned long val);
 
-/*!***************************************************************************
- * @short Set the PC and prefetch
- *****************************************************************************/
-void e68_set_pc_prefetch (e68000_t *c, unsigned long val);
 
 void e68_exception_reset (e68000_t *c);
-
-void e68_exception_bus (e68000_t *c, uint32_t addr, int data, int wr);
 
 void e68_exception_address (e68000_t *c, uint32_t addr, int data, int wr);
 
@@ -496,7 +455,7 @@ void e68_exception_intr (e68000_t *c, unsigned level, unsigned vect);
 /*!***************************************************************************
  * @short Set the interrupt priority level input
  *****************************************************************************/
-void e68_interrupt (e68000_t *c, unsigned level);
+void e68_interrupt (e68000_t *c, unsigned level, unsigned vect, int avec);
 
 /*!***************************************************************************
  * @short Reset a 68000 cpu core
@@ -525,7 +484,6 @@ void e68_clock (e68000_t *c, unsigned long n);
 #define E68_DFLAG_RTS    0x0010
 #define E68_DFLAG_DEP_CC 0x0020
 #define E68_DFLAG_68010  0x0040
-#define E68_DFLAG_68020  0x0080
 
 typedef struct {
 	unsigned flags;

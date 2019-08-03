@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/macplus/macplus.c                                   *
  * Created:     2007-04-15 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2007-2014 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2007-2012 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -127,7 +127,7 @@ void mac_interrupt_check (macplus_t *sim)
 	mac_log_deb ("interrupt level %u\n", i);
 #endif
 
-	e68_interrupt (sim->cpu, i);
+	e68_interrupt (sim->cpu, i, 0, 1);
 }
 
 void mac_interrupt (macplus_t *sim, unsigned level, int val)
@@ -145,38 +145,7 @@ void mac_interrupt (macplus_t *sim, unsigned level, int val)
 static
 void mac_interrupt_via (void *ext, unsigned char val)
 {
-	macplus_t *sim = ext;
-
-	if (val) {
-		sim->intr_scsi_via |= 1;
-	}
-	else {
-		sim->intr_scsi_via &= ~1;
-	}
-
-	mac_interrupt (ext, 1, sim->intr_scsi_via);
-}
-
-static
-void mac_interrupt_scsi (void *ext, unsigned char val)
-{
-	macplus_t *sim = ext;
-
-	if (sim->via_port_b & 0x40) {
-		val = 0;
-	}
-	else {
-		val = (val != 0);
-	}
-
-	if (val) {
-		sim->intr_scsi_via |= 2;
-	}
-	else {
-		sim->intr_scsi_via &= ~2;
-	}
-
-	mac_interrupt (sim, 1, sim->intr_scsi_via);
+	mac_interrupt (ext, 1, val);
 }
 
 static
@@ -230,7 +199,7 @@ void mac_interrupt_sony_check (macplus_t *sim)
 	e68_set_mem32 (sim->cpu, a7 - 4, e68_get_pc (sim->cpu));
 	e68_set_areg32 (sim->cpu, 7, a7 - 4);
 
-	e68_set_pc_prefetch (sim->cpu, sim->sony.check_addr);
+	e68_set_pc (sim->cpu, sim->sony.check_addr);
 }
 
 void mac_interrupt_osi (void *ext, unsigned char val)
@@ -1056,10 +1025,6 @@ void mac_setup_scsi (macplus_t *sim, ini_sct_t *ini)
 
 	mac_scsi_init (&sim->scsi);
 
-	if (sim->model & PCE_MAC_SE) {
-		mac_scsi_set_int_fct (&sim->scsi, sim, mac_interrupt_scsi);
-	}
-
 	mac_scsi_set_disks (&sim->scsi, sim->dsks);
 
 	blk = mem_blk_new (addr, size, 0);
@@ -1342,6 +1307,12 @@ void mac_free (macplus_t *sim)
 			sim->rtc_fname
 		);
 	}
+	else
+	{
+		pce_log_tag (MSG_INF, "RTC:", "writing rtc file succeded (%s)\n",
+			sim->rtc_fname
+		);
+	}
 
 	free (sim->rtc_fname);
 
@@ -1457,9 +1428,6 @@ int mac_set_cpu_model (macplus_t *sim, const char *model)
 	else if (strcmp (model, "68010") == 0) {
 		e68_set_68010 (sim->cpu);
 	}
-	else if (strcmp (model, "68020") == 0) {
-		e68_set_68020 (sim->cpu);
-	}
 	else {
 		return (1);
 	}
@@ -1485,7 +1453,6 @@ void mac_reset (macplus_t *sim)
 	sim->mouse_button = 0;
 
 	sim->intr = 0;
-	sim->intr_scsi_via = 0;
 
 	if (sim->model & PCE_MAC_PLUS) {
 		mac_set_overlay (sim, 1);

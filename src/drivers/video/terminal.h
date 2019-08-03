@@ -99,7 +99,6 @@ typedef struct {
 terminal_t *null_new (ini_sct_t *ini);
 terminal_t *xt_new (ini_sct_t *ini);
 terminal_t *sdl_new (ini_sct_t *ini);
-terminal_t *sdl2_new (ini_sct_t *ini);
 
 
 /*!***************************************************************************

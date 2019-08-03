@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/cpu/e8086/e8086.h                                        *
  * Created:     1996-04-28 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 1996-2017 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 1996-2013 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -82,9 +82,6 @@
 
 #define E86_PQ_MAX 16
 
-#define E86_STATE_HALT  1
-#define E86_STATE_RESET 2
-
 
 struct e8086_t;
 
@@ -131,9 +128,6 @@ typedef struct e8086_t {
 	void             (*op_undef) (void *ext, unsigned char op1, unsigned char op2);
 	void             (*op_int) (void *ext, unsigned char n);
 
-	void             *hook_ext;
-	int              (*hook) (void *ext);
-
 	unsigned short   cur_ip;
 
 	unsigned         pq_size;
@@ -145,15 +139,10 @@ typedef struct e8086_t {
 
 	unsigned short   seg_override;
 
-	unsigned char    state;
+	int              halt;
 
 	char             irq;
 	char             enable_int;
-
-	unsigned         int_cnt;
-	unsigned char    int_vec;
-	unsigned short   int_cs;
-	unsigned short   int_ip;
 
 	e86_opcode_f     op[256];
 
@@ -166,8 +155,9 @@ typedef struct e8086_t {
 	} ea;
 
 	unsigned long    delay;
-	unsigned long    clock;
-	unsigned         opcnt;
+
+	unsigned long long clocks;
+	unsigned long long instructions;
 } e8086_t;
 
 
@@ -282,10 +272,6 @@ typedef struct e8086_t {
 #define e86_set_tf(c, v) e86_set_f (c, E86_FLG_T, v)
 
 
-#define e86_get_halt(c) (((c)->state & E86_STATE_HALT) != 0)
-#define e86_get_reset(c) (((c)->state & E86_STATE_RESET) != 0)
-
-
 #define e86_get_linear(seg, ofs) \
 	((((seg) & 0xffffUL) << 4) + ((ofs) & 0xffff))
 
@@ -350,8 +336,6 @@ void e86_set_mem16 (e8086_t *c, unsigned short seg, unsigned short ofs, unsigned
 	do { (cpu)->prt_set_uint16 ((cpu)->prt, ofs, val); } while (0)
 
 #define e86_get_delay(c) ((c)->delay)
-#define e86_get_clock(c) ((c)->clock)
-#define e86_get_opcnt(c) ((c)->opcnt)
 
 
 void e86_init (e8086_t *c);
@@ -386,8 +370,6 @@ unsigned long e86_get_addr_mask (e8086_t *c);
 
 void e86_set_inta_fct (e8086_t *c, void *ext, void *fct);
 
-void e86_set_hook_fct (e8086_t *c, void *ext, void *fct);
-
 void e86_set_ram (e8086_t *c, unsigned char *ram, unsigned long cnt);
 
 void e86_set_mem (e8086_t *c, void *mem,
@@ -408,6 +390,10 @@ void e86_irq (e8086_t *cpu, unsigned char val);
 int e86_interrupt (e8086_t *cpu, unsigned n);
 
 unsigned e86_undefined (e8086_t *c);
+
+unsigned long long e86_get_clock (e8086_t *c);
+
+unsigned long long e86_get_opcnt (e8086_t *c);
 
 void e86_reset (e8086_t *c);
 

@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/drivers/char/char.h                                      *
  * Created:     2009-03-06 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2009-2016 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2009-2011 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -69,16 +69,9 @@ typedef struct char_drv_t {
 } char_drv_t;
 
 
-typedef char_drv_t *(*chr_open_f) (const char *name);
-
-
 void chr_init (char_drv_t *cdrv, void *ext);
-char_drv_t *chr_open (const char *name);
-void chr_close (char_drv_t *cdrv);
 
-int chr_register (const char *name, chr_open_f open);
-int chr_unregister (const char *name);
-int chr_register_default (void);
+void chr_close (char_drv_t *cdrv);
 
 unsigned chr_read (char_drv_t *cdrv, void *buf, unsigned cnt);
 unsigned chr_write (char_drv_t *cdrv, const void *buf, unsigned cnt);
@@ -89,6 +82,17 @@ int chr_set_ctl (char_drv_t *cdrv, unsigned ctl);
 int chr_set_params (char_drv_t *cdrv, unsigned long bps, unsigned bpc, unsigned parity, unsigned stop);
 
 int chr_set_log (char_drv_t *cdrv, const char *fname);
+
+char_drv_t *chr_open (const char *name);
+char_drv_t *chr_mouse_open (const char *name);
+char_drv_t *chr_null_open (const char *name);
+char_drv_t *chr_posix_open (const char *name);
+char_drv_t *chr_ppp_open (const char *name);
+char_drv_t *chr_pty_open (const char *name);
+char_drv_t *chr_slip_open (const char *name);
+char_drv_t *chr_stdio_open (const char *name);
+char_drv_t *chr_tcp_open (const char *name);
+char_drv_t *chr_tios_open (const char *name);
 
 void chr_mouse_set (int dx, int dy, unsigned button);
 

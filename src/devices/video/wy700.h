@@ -25,39 +25,17 @@
 #define PCE_VIDEO_WY700_H 1
 
 
-#include <chipset/e6845.h>
-#include <devices/memory.h>
-#include <devices/video/video.h>
-#include <drivers/video/terminal.h>
 #include <libini/libini.h>
 
-
-typedef struct {
-	video_t             video;
-	e6845_t             crtc;
-
-	mem_blk_t           *memblk;
-	unsigned char       *mem;
-
-	mem_blk_t           *regblk;
-	unsigned char       *reg;
-
-	terminal_t          *term;
-
-	const unsigned char *font;
-
-	unsigned long       clock1;
-	unsigned long       clock2;
-
-	unsigned char       mod_cnt;
-
-	char                blink;
-	unsigned            blink_cnt;
-	unsigned            blink_rate;
-} wy700_t;
+#include <devices/video/video.h>
+#include <devices/video/cga.h>
 
 
-wy700_t *wy700_new (unsigned long io, unsigned long addr);
+void wy700_init (cga_t *wy, unsigned long io, unsigned long addr, unsigned long size);
+
+void wy700_free (cga_t *wy);
+
+cga_t *wy700_new (unsigned long io, unsigned long addr, unsigned long size);
 
 video_t *wy700_new_ini (ini_sct_t *sct);
 

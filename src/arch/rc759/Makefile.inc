@@ -56,6 +56,7 @@ PCE_RC759_ETC  := $(rel)/pce-rc759.cfg
 PCE_RC759_BIN  := $(rel)/pce-rc759$(EXEEXT)
 
 PCE_RC759_OBJ_EXT := \
+	src/cpu/e8086/e8086.a \
 	src/chipset/80186/dma.o \
 	src/chipset/80186/icu.o \
 	src/chipset/80186/tcu.o \
@@ -65,6 +66,11 @@ PCE_RC759_OBJ_EXT := \
 	src/chipset/wd179x.o \
 	src/devices/device.o \
 	src/devices/memory.o \
+	src/drivers/block/block.a \
+	src/drivers/char/char.a \
+	src/drivers/pbit/pbit.a \
+	src/drivers/pfdc/pfdc.a \
+	src/drivers/sound/sound.a \
 	src/drivers/options.o \
 	src/lib/brkpt.o \
 	src/lib/cmd.o \
@@ -82,13 +88,9 @@ PCE_RC759_OBJ_EXT := \
 	src/lib/path.o \
 	src/lib/string.o \
 	src/lib/sysdep.o \
-	$(CPU_8086_OBJ) \
-	$(LIBINI_OBJ) \
-	$(DRV_BLK_OBJ) \
-	$(DRV_PSI_OBJ) \
-	$(DRV_PRI_OBJ) \
-	$(DRV_CHR_OBJ) \
-	$(DRV_SND_OBJ) \
+	src/libini/libini.a \
+	src/drivers/block/block.a \
+	src/drivers/pfdc/pfdc.a \
 	$(DRV_TRM_OBJ)
 
 ifeq "$(PCE_ENABLE_TUN)" "1"

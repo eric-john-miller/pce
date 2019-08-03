@@ -24,8 +24,6 @@
 #define PCE_LIB_BRKPT_H 1
 
 
-#include <stdio.h>
-
 #include <lib/cmd.h>
 
 

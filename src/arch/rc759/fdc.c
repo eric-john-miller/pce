@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/rc759/fdc.c                                         *
  * Created:     2012-07-05 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2012-2014 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2012 Hampa Hug <hampa@hampa.ch>                          *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -30,13 +30,13 @@
 #include <chipset/wd179x.h>
 
 #include <drivers/block/block.h>
-#include <drivers/block/blkpsi.h>
+#include <drivers/block/blkfdc.h>
 
-#include <drivers/psi/psi.h>
+#include <drivers/pfdc/pfdc.h>
 
-#include <drivers/pri/pri.h>
-#include <drivers/pri/pri-img.h>
-#include <drivers/pri/pri-enc-mfm.h>
+#include <drivers/pbit/pbit.h>
+#include <drivers/pbit/pbit-io.h>
+#include <drivers/pbit/mfm-ibm.h>
 
 #include <lib/log.h>
 #include <lib/string.h>
@@ -47,40 +47,74 @@
 #endif
 
 
-#define RC759_TRACK_SIZE 166666
-
-
 static
-int rc759_read_track (void *ext, unsigned d, unsigned c, unsigned h, pri_trk_t **trk)
+int rc759_read_track (void *ext, wd179x_drive_t *drv)
 {
-	rc759_fdc_t *fdc;
-	pri_img_t   *img;
+	unsigned long cnt;
+	rc759_fdc_t  *fdc;
+	pbit_img_t   *img;
+	pbit_trk_t   *trk;
 
 	fdc = ext;
 
-	if ((img = fdc->img[d & 1]) == NULL) {
+	img = fdc->img[drv->d & 1];
+
+	if (img == NULL) {
 		return (1);
 	}
 
-	if ((*trk = pri_img_get_track (img, c, h, 1)) == NULL) {
+	trk = pbit_img_get_track (img, drv->c, drv->h, 0);
+
+	if (trk == NULL) {
 		return (1);
 	}
+
+	cnt = (trk->size + 7) / 8;
+
+	if (cnt > WD179X_TRKBUF_SIZE) {
+		return (1);
+	}
+
+	memcpy (drv->trkbuf, trk->data, cnt);
+
+	drv->trkbuf_cnt = trk->size;
 
 	return (0);
 }
 
 static
-int rc759_write_track (void *ext, unsigned d, unsigned c, unsigned h, pri_trk_t *trk)
+int rc759_write_track (void *ext, wd179x_drive_t *drv)
 {
-	rc759_fdc_t *fdc;
+	unsigned long cnt;
+	rc759_fdc_t  *fdc;
+	pbit_img_t   *img;
+	pbit_trk_t   *trk;
 
 	fdc = ext;
 
-	if (fdc->img[d & 1] == NULL) {
+	img = fdc->img[drv->d & 1];
+
+	if (img == NULL) {
 		return (1);
 	}
 
-	fdc->modified[d & 1] = 1;
+	fdc->modified[drv->d & 1] = 1;
+
+	trk = pbit_img_get_track (img, drv->c, drv->h, 1);
+
+	if (trk == NULL) {
+		return (1);
+	}
+
+	if (pbit_trk_set_size (trk, drv->trkbuf_cnt)) {
+		return (1);
+	}
+
+	pbit_trk_set_clock (trk, 1000000);
+
+	cnt = (trk->size + 7) / 8;
+
+	memcpy (trk->data, drv->trkbuf, cnt);
 
 	return (0);
 }
@@ -93,9 +127,6 @@ void rc759_fdc_init (rc759_fdc_t *fdc)
 
 	wd179x_set_read_track_fct (&fdc->wd179x, fdc, rc759_read_track);
 	wd179x_set_write_track_fct (&fdc->wd179x, fdc, rc759_write_track);
-
-	wd179x_set_default_track_size (&fdc->wd179x, 0, RC759_TRACK_SIZE);
-	wd179x_set_default_track_size (&fdc->wd179x, 1, RC759_TRACK_SIZE);
 
 	wd179x_set_ready (&fdc->wd179x, 0, 0);
 	wd179x_set_ready (&fdc->wd179x, 1, 0);
@@ -115,15 +146,15 @@ void rc759_fdc_free (rc759_fdc_t *fdc)
 {
 	unsigned i;
 
+	wd179x_free (&fdc->wd179x);
+
 	for (i = 0; i < 2; i++) {
 		rc759_fdc_save (fdc, i);
 
-		pri_img_del (fdc->img[i]);
+		pbit_img_del (fdc->img[i]);
 
 		free (fdc->fname[i]);
 	}
-
-	wd179x_free (&fdc->wd179x);
 }
 
 void rc759_fdc_reset (rc759_fdc_t *fdc)
@@ -269,29 +300,29 @@ void rc759_fdc_set_fcr (rc759_fdc_t *fdc, unsigned char val)
 }
 
 static
-pri_img_t *rc759_fdc_load_pri (rc759_fdc_t *fdc, unsigned drive)
+pbit_img_t *rc759_fdc_load_pbit (rc759_fdc_t *fdc, unsigned drive)
 {
-	pri_img_t *img;
+	pbit_img_t *img;
 
 	if (fdc->fname[drive] == NULL) {
 		return (NULL);
 	}
 
-	img = pri_img_load (fdc->fname[drive], PRI_FORMAT_PBIT);
+	img = pbit_img_load (fdc->fname[drive], PBIT_FORMAT_PBIT);
 
 	return (img);
 }
 
 static
-psi_img_t *rc759_fdc_load_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk)
+pfdc_img_t *rc759_fdc_load_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk)
 {
 	unsigned      c, h, s;
 	unsigned      cn, hn, sn;
 	unsigned long lba;
-	psi_sct_t     *sct;
-	psi_img_t     *img;
+	pfdc_sct_t    *sct;
+	pfdc_img_t    *img;
 
-	img = psi_img_new();
+	img = pfdc_img_new();
 
 	if (img == NULL) {
 		return (NULL);
@@ -306,19 +337,19 @@ psi_img_t *rc759_fdc_load_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk)
 	for (c = 0; c < cn; c++) {
 		for (h = 0; h < hn; h++) {
 			for (s = 0; s < sn; s++) {
-				sct = psi_sct_new (c, h, s + 1, 1024);
+				sct = pfdc_sct_new (c, h, s + 1, 1024);
 
 				if (sct == NULL) {
-					psi_img_del (img);
+					pfdc_img_del (img);
 					return (NULL);
 				}
 
-				psi_sct_set_encoding (sct, PSI_ENC_MFM_HD);
+				pfdc_sct_set_encoding (sct, PFDC_ENC_MFM_HD);
 
-				psi_img_add_sector (img, sct, c, h);
+				pfdc_img_add_sector (img, sct, c, h);
 
 				if (dsk_read_lba (dsk, sct->data, lba, 2)) {
-					psi_img_del (img);
+					pfdc_img_del (img);
 					return (NULL);
 				}
 
@@ -331,12 +362,12 @@ psi_img_t *rc759_fdc_load_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk)
 }
 
 static
-pri_img_t *rc759_fdc_load_disk (rc759_fdc_t *fdc, unsigned drive)
+pbit_img_t *rc759_fdc_load_disk (rc759_fdc_t *fdc, unsigned drive)
 {
 	disk_t     *dsk;
-	disk_psi_t *dskpsi;
-	psi_img_t  *img, *del;
-	pri_img_t  *ret;
+	disk_fdc_t *dskfdc;
+	pfdc_img_t *img, *del;
+	pbit_img_t *ret;
 
 	dsk = dsks_get_disk (fdc->dsks, fdc->diskid[drive]);
 
@@ -344,9 +375,9 @@ pri_img_t *rc759_fdc_load_disk (rc759_fdc_t *fdc, unsigned drive)
 		return (NULL);
 	}
 
-	if (dsk_get_type (dsk) == PCE_DISK_PSI) {
-		dskpsi = dsk->ext;
-		img = dskpsi->img;
+	if (dsk_get_type (dsk) == PCE_DISK_FDC) {
+		dskfdc = dsk->ext;
+		img = dskfdc->img;
 		del = NULL;
 	}
 	else {
@@ -358,18 +389,16 @@ pri_img_t *rc759_fdc_load_disk (rc759_fdc_t *fdc, unsigned drive)
 		return (NULL);
 	}
 
-	ret = pri_encode_mfm_hd_360 (img);
+	ret = pbit_encode_mfm_hd_360 (img);
 
-	psi_img_del (del);
+	pfdc_img_del (del);
 
 	return (ret);
 }
 
 int rc759_fdc_load (rc759_fdc_t *fdc, unsigned drive)
 {
-	pri_img_t *img;
-
-	wd179x_flush (&fdc->wd179x, drive);
+	pbit_img_t *img;
 
 	wd179x_set_ready (&fdc->wd179x, drive, 0);
 
@@ -378,11 +407,11 @@ int rc759_fdc_load (rc759_fdc_t *fdc, unsigned drive)
 	fdc->use_fname[drive] = 0;
 
 	if (fdc->fname[drive] != NULL) {
-		img = rc759_fdc_load_pri (fdc, drive);
+		img = rc759_fdc_load_pbit (fdc, drive);
 
 		if (img != NULL) {
 			fdc->use_fname[drive] = 1;
-			sim_log_deb ("fdc: loading drive %u (pri)\n", drive);
+			sim_log_deb ("fdc: loading drive %u (pbit)\n", drive);
 		}
 	}
 
@@ -399,7 +428,7 @@ int rc759_fdc_load (rc759_fdc_t *fdc, unsigned drive)
 		return (1);
 	}
 
-	pri_img_del (fdc->img[drive]);
+	pbit_img_del (fdc->img[drive]);
 
 	fdc->img[drive] = img;
 
@@ -411,14 +440,14 @@ int rc759_fdc_load (rc759_fdc_t *fdc, unsigned drive)
 }
 
 static
-int rc759_fdc_save_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk, psi_img_t *img)
+int rc759_fdc_save_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk, pfdc_img_t *img)
 {
 	unsigned      c, h, s;
 	unsigned      cn, hn, sn;
 	unsigned      cnt;
 	unsigned long lba;
 	unsigned char buf[1024];
-	psi_sct_t     *sct;
+	pfdc_sct_t    *sct;
 
 	lba = 0;
 
@@ -429,7 +458,7 @@ int rc759_fdc_save_block (rc759_fdc_t *fdc, unsigned drive, disk_t *dsk, psi_img
 	for (c = 0; c < cn; c++) {
 		for (h = 0; h < hn; h++) {
 			for (s = 0; s < sn; s++) {
-				sct = psi_img_get_sector (img, c, h, s + 1, 0);
+				sct = pfdc_img_get_sector (img, c, h, s + 1, 0);
 
 				if (sct == NULL) {
 					memset (buf, 0, 1024);
@@ -462,8 +491,8 @@ int rc759_fdc_save_disk (rc759_fdc_t *fdc, unsigned drive)
 {
 	int        r;
 	disk_t     *dsk;
-	disk_psi_t *dskpsi;
-	psi_img_t  *img;
+	disk_fdc_t *dskfdc;
+	pfdc_img_t *img;
 
 	dsk = dsks_get_disk (fdc->dsks, fdc->diskid[drive]);
 
@@ -471,22 +500,22 @@ int rc759_fdc_save_disk (rc759_fdc_t *fdc, unsigned drive)
 		return (1);
 	}
 
-	img = pri_decode_mfm (fdc->img[drive], NULL);
+	img = pbit_decode_mfm (fdc->img[drive]);
 
 	if (img == NULL) {
 		return (1);
 	}
 
-	if (dsk_get_type (dsk) == PCE_DISK_PSI) {
-		dskpsi = dsk->ext;
-		psi_img_del (dskpsi->img);
-		dskpsi->img = img;
-		dskpsi->dirty = 1;
+	if (dsk_get_type (dsk) == PCE_DISK_FDC) {
+		dskfdc = dsk->ext;
+		pfdc_img_del (dskfdc->img);
+		dskfdc->img = img;
+		dskfdc->dirty = 1;
 	}
 	else {
 		r = rc759_fdc_save_block (fdc, drive, dsk, img);
 
-		psi_img_del (img);
+		pfdc_img_del (img);
 
 		if (r) {
 			return (1);
@@ -497,13 +526,13 @@ int rc759_fdc_save_disk (rc759_fdc_t *fdc, unsigned drive)
 }
 
 static
-int rc759_fdc_save_pri (rc759_fdc_t *fdc, unsigned drive)
+int rc759_fdc_save_pbit (rc759_fdc_t *fdc, unsigned drive)
 {
 	if (fdc->fname[drive] == NULL) {
 		return (1);
 	}
 
-	if (pri_img_save (fdc->fname[drive], fdc->img[drive], PRI_FORMAT_NONE)) {
+	if (pbit_img_save (fdc->fname[drive], fdc->img[drive], PBIT_FORMAT_NONE)) {
 		return (1);
 	}
 
@@ -523,8 +552,8 @@ int rc759_fdc_save (rc759_fdc_t *fdc, unsigned drive)
 	sim_log_deb ("fdc: saving drive %u\n", drive);
 
 	if (fdc->use_fname[drive]) {
-		if (rc759_fdc_save_pri (fdc, drive)) {
-			sim_log_deb ("fdc: saving drive %u failed (pri)\n",
+		if (rc759_fdc_save_pbit (fdc, drive)) {
+			sim_log_deb ("fdc: saving drive %u failed (pbit)\n",
 				drive
 			);
 			return (1);

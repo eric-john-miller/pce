@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/rc759/rc759.c                                       *
  * Created:     2012-06-29 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2012-2013 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2012 Hampa Hug <hampa@hampa.ch>                          *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -696,11 +696,7 @@ void rc759_set_ppi_port_c (rc759_t *sim, unsigned char val)
 static
 void rc759_set_mouse (void *ext, int dx, int dy, unsigned button)
 {
-	rc759_t *sim = ext;
-
 	chr_mouse_set (dx, dy, button);
-
-	rc759_kbd_set_mouse (&sim->kbd, dx, dy, button);
 }
 
 
@@ -941,7 +937,6 @@ void rc759_setup_fdc (rc759_t *sim, ini_sct_t *ini)
 	wd179x_set_drq_fct (&sim->fdc.wd179x, &sim->dma, e80186_dma_set_dreq0);
 
 	wd179x_set_input_clock (&sim->fdc.wd179x, sim->cpu_clock_frq);
-	wd179x_set_bit_clock (&sim->fdc.wd179x, 2000000);
 
 	rc759_fdc_set_disks (&sim->fdc, sim->dsks);
 

@@ -65,11 +65,17 @@ PCE_MACPLUS_ETC  := $(rel)/pce-mac-plus.cfg $(rel)/pce-mac-se.cfg $(rel)/pce-mac
 PCE_MACPLUS_BIN  := $(rel)/pce-macplus$(EXEEXT)
 
 PCE_MACPLUS_OBJ_EXT := \
+	src/cpu/e68000/e68000.a \
 	src/chipset/82xx/e8250.o \
 	src/chipset/e6522.o \
 	src/chipset/e8530.o \
 	src/devices/device.o \
 	src/devices/memory.o \
+	src/drivers/block/block.a \
+	src/drivers/char/char.a \
+	src/drivers/pbit/pbit.a \
+	src/drivers/pfdc/pfdc.a \
+	src/drivers/sound/sound.a \
 	src/drivers/options.o \
 	src/lib/brkpt.o \
 	src/lib/cmd.o \
@@ -87,14 +93,9 @@ PCE_MACPLUS_OBJ_EXT := \
 	src/lib/path.o \
 	src/lib/string.o \
 	src/lib/sysdep.o \
-	$(CPU_68K_OBJ) \
-	$(DRV_BLK_OBJ) \
-	$(DRV_PSI_OBJ) \
-	$(DRV_PRI_OBJ) \
-	$(DRV_CHR_OBJ) \
-	$(DRV_SND_OBJ) \
-	$(DRV_TRM_OBJ) \
-	$(LIBINI_OBJ)
+	src/libini/libini.a \
+	src/drivers/block/block.a \
+	$(DRV_TRM_OBJ)
 
 ifeq "$(PCE_ENABLE_TUN)" "1"
 PCE_MACPLUS_OBJ_EXT += src/lib/tun.o

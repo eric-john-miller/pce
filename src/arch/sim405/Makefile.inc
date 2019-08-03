@@ -30,6 +30,7 @@ PCE_SIM405_ETC := $(rel)/pce-sim405.cfg
 PCE_SIM405_BIN := $(rel)/pce-sim405$(EXEEXT)
 
 PCE_SIM405_OBJ_EXT := \
+	src/cpu/ppc405/ppc405.a \
 	src/chipset/82xx/e8250.o \
 	src/chipset/clock/ds1743.o \
 	src/chipset/ppc405/uic.o \
@@ -42,11 +43,13 @@ PCE_SIM405_OBJ_EXT := \
 	src/devices/pci-ata.o \
 	src/devices/serport.o \
 	src/devices/slip.o \
+	src/drivers/block/block.a \
+	src/drivers/char/char.a \
+	src/drivers/pfdc/pfdc.a \
 	src/drivers/options.o \
 	src/lib/brkpt.o \
 	src/lib/cmd.o \
 	src/lib/console.o \
-	src/lib/getopt.o \
 	src/lib/ihex.o \
 	src/lib/iniata.o \
 	src/lib/inidsk.o \
@@ -59,11 +62,9 @@ PCE_SIM405_OBJ_EXT := \
 	src/lib/srec.o \
 	src/lib/string.o \
 	src/lib/sysdep.o \
-	$(CPU_PPC405_OBJ) \
-	$(DRV_BLK_OBJ) \
-	$(DRV_PSI_OBJ) \
-	$(DRV_CHR_OBJ) \
-	$(LIBINI_OBJ)
+	src/libini/libini.a \
+	src/drivers/block/block.a \
+	src/drivers/pfdc/pfdc.a
 
 ifeq "$(PCE_ENABLE_TUN)" "1"
 PCE_SIM405_OBJ_EXT += src/lib/tun.o

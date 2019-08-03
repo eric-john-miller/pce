@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/ibmpc/cmd.c                                         *
  * Created:     2010-09-21 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2010-2018 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2010-2013 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -50,7 +50,6 @@ static mon_cmd_t par_cmd[] = {
 	{ "p", "[cnt]", "execute cnt instructions, without trace in calls [1]" },
 	{ "r", "[reg val]", "set a register" },
 	{ "s", "[what]", "print status (pc|cpu|mem|pit|ppi|pic|time|uart|video|xms)" },
-	{ "trace", "on|off|expr", "turn trace on or off" },
 	{ "t", "[cnt]", "execute cnt instructions [1]" },
 	{ "u", "[addr [cnt [mode]]]", "disassemble" }
 };
@@ -183,12 +182,12 @@ void prt_state_pit (e8253_t *pit)
 			"G=%u O=%u R=%d\n",
 			i,
 			cnt->sr, cnt->mode, cnt->rw,
-			cnt->ce,
+			cnt->val,
 			(cnt->cr_wr & 2) ? "cr1" : "CR1", cnt->cr[1],
 			(cnt->cr_wr & 1) ? "cr0" : "CR0", cnt->cr[0],
 			(cnt->ol_rd & 2) ? "ol1" : "OL1", cnt->ol[1],
 			(cnt->ol_rd & 1) ? "ol0" : "OL0", cnt->ol[0],
-			(unsigned) cnt->gate_val,
+			(unsigned) cnt->gate,
 			(unsigned) cnt->out_val,
 			cnt->counting
 		);
@@ -372,8 +371,29 @@ void prt_state_uart (e8250_t *uart, unsigned base)
 	);
 }
 
+static
+void prt_state_time (e8086_t *c)
+{
+	double cpi;
+
+	pce_prt_sep ("TIME");
+
+	if (c->instructions > 0) {
+		cpi = (double) c->clocks / (double) c->instructions;
+	}
+	else {
+		cpi = 0.0;
+	}
+
+	pce_printf ("CLK=%llu + %lu\n", c->clocks, c->delay);
+	pce_printf ("OPS=%llu\n", c->instructions);
+	pce_printf ("CPI=%.4f\n", cpi);
+}
+
 void prt_state_cpu (e8086_t *c)
 {
+	static char ft[2] = { '-', '+' };
+
 	pce_prt_sep ("8086");
 
 	pce_printf (
@@ -385,62 +405,21 @@ void prt_state_cpu (e8086_t *c)
 		(par_pc->current_int & 0x100) ? '*' : ' '
 	);
 
-	pce_printf ("DS=%04X  ES=%04X  SS=%04X  CS=%04X  IP=%04X  F =%04X",
-		e86_get_ds (c), e86_get_es (c), e86_get_ss (c), e86_get_cs (c),
-		e86_get_ip (c), e86_get_flags (c)
+	pce_printf ("CS=%04X  DS=%04X  ES=%04X  SS=%04X  IP=%04X  F =%04X",
+		e86_get_cs (c), e86_get_ds (c), e86_get_es (c), e86_get_ss (c),
+		e86_get_ip (c), c->flg
 	);
 
-	pce_printf ("  [%c%c%c%c%c%c%c%c%c]\n",
-		e86_get_df (c) ? 'D' : '-',
-		e86_get_if (c) ? 'I' : '-',
-		e86_get_tf (c) ? 'T' : '-',
-		e86_get_of (c) ? 'O' : '-',
-		e86_get_sf (c) ? 'S' : '-',
-		e86_get_zf (c) ? 'Z' : '-',
-		e86_get_af (c) ? 'A' : '-',
-		e86_get_pf (c) ? 'P' : '-',
-		e86_get_cf (c) ? 'C' : '-'
+	pce_printf ("  I%c D%c O%c S%c Z%c A%c P%c C%c\n",
+		ft[e86_get_if (c)], ft[e86_get_df (c)],
+		ft[e86_get_of (c)], ft[e86_get_sf (c)],
+		ft[e86_get_zf (c)], ft[e86_get_af (c)],
+		ft[e86_get_pf (c)], ft[e86_get_cf (c)]
 	);
 
-	if (e86_get_halt (c)) {
+	if (c->halt) {
 		pce_printf ("HALT=1\n");
 	}
-}
-
-void pc_print_trace (e8086_t *c)
-{
-	e86_disasm_t op;
-	char         str[256];
-
-	e86_disasm_cur (c, &op);
-
-	switch (op.arg_n) {
-	case 0:
-		strcpy (str, op.op);
-		break;
-
-	case 1:
-		sprintf (str, "%-5s %s", op.op, op.arg1);
-		break;
-
-	case 2:
-		sprintf (str, "%-5s %s,%s", op.op, op.arg1, op.arg2);
-		break;
-
-	default:
-		strcpy (str, "****");
-		break;
-	}
-
-	pce_printf (
-		"AX=%04X BX=%04X CX=%04X DX=%04X "
-		"SP=%04X BP=%04X SI=%04X DI=%04X "
-		"DS=%04X ES=%04X SS=%04X F=%04X %04X:%04X %s\n",
-		e86_get_ax (c), e86_get_bx (c), e86_get_cx (c), e86_get_dx (c),
-		e86_get_sp (c), e86_get_bp (c), e86_get_si (c), e86_get_di (c),
-		e86_get_ds (c),	e86_get_es (c), e86_get_ss (c), e86_get_flags (c),
-		e86_get_cs (c), e86_get_ip (c), str
-	);
 }
 
 static
@@ -465,6 +444,7 @@ void prt_state_pc (ibmpc_t *pc)
 	prt_state_pit (&pc->pit);
 	prt_state_pic (&pc->pic);
 	prt_state_dma (&pc->dma);
+	prt_state_time (pc->cpu);
 	prt_state_cpu (pc->cpu);
 }
 
@@ -508,7 +488,7 @@ int pc_check_break (ibmpc_t *pc)
 static
 void pc_exec (ibmpc_t *pc)
 {
-	unsigned old;
+	unsigned long long old;
 
 	pc->current_int &= 0xff;
 
@@ -529,13 +509,11 @@ void pc_run (ibmpc_t *pc)
 
 	pc_clock_discontinuity (pc);
 
-	if (pc->pause == 0) {
-		while (pc->brk == 0) {
+	while (pc->brk == 0) {
+		if (pc->pause == 0) {
 			pc_clock (pc, 4 * pc->speed_current);
 		}
-	}
-	else {
-		while (pc->brk == 0) {
+		else {
 			pce_usleep (100000);
 			trm_check (pc->trm);
 		}
@@ -713,10 +691,6 @@ void pc_cmd_g_b (cmd_t *cmd, ibmpc_t *pc)
 	pc_clock_discontinuity (pc);
 
 	while (1) {
-		if (pc->trace) {
-			pc_print_trace (pc->cpu);
-		}
-
 		pc_exec (pc);
 
 		if (pc_check_break (pc)) {
@@ -743,10 +717,6 @@ void pc_cmd_g_far (cmd_t *cmd, ibmpc_t *pc)
 	pc_clock_discontinuity (pc);
 
 	while (1) {
-		if (pc->trace) {
-			pc_print_trace (pc->cpu);
-		}
-
 		pc_exec (pc);
 
 		if (e86_get_cs (pc->cpu) != seg) {
@@ -783,51 +753,48 @@ void pc_cmd_g (cmd_t *cmd, ibmpc_t *pc)
 static
 void pc_cmd_hm (cmd_t *cmd)
 {
-	pce_puts (
-		"emu.config.save      <filename>\n"
-		"emu.exit\n"
-		"emu.stop\n"
-		"emu.pause            \"0\" | \"1\"\n"
-		"emu.pause.toggle\n"
-		"emu.reset\n"
-		"\n"
-		"emu.cpu.model        \"8086\" | \"8088\" | \"80186\" | \"80188\"\n"
-		"emu.cpu.speed        <factor>\n"
-		"emu.cpu.speed.step   <adjustment>\n"
-		"\n"
-		"emu.disk.boot        <bootdrive>\n"
-		"emu.disk.commit      [<drive>]\n"
-		"emu.disk.eject       <drive>\n"
-		"emu.disk.insert      <drive>:<fname>\n"
-		"\n"
-		"emu.fdc.accurate     \"0\" | \"1\"\n"
-		"\n"
-		"emu.parport.driver   <driver>\n"
-		"emu.parport.file     <filename>\n"
-		"\n"
-		"emu.serport.driver   <driver>\n"
-		"emu.serport.file     <filename>\n"
-		"\n"
-		"emu.tape.append\n"
-		"emu.tape.file        <filename>\n"
-		"emu.tape.pcmfreq     <frequency>\n"
-		"emu.tape.load        [<position> | \"end\"]\n"
-		"emu.tape.read        <filename>\n"
-		"emu.tape.rewind\n"
-		"emu.tape.save        [<position> | \"end\"]\n"
-		"emu.tape.state\n"
-		"emu.tape.write       <filename>\n"
-		"\n"
-		"emu.term.fullscreen  \"0\" | \"1\"\n"
-		"emu.term.fullscreen.toggle\n"
-		"emu.term.grab\n"
-		"emu.term.release\n"
-		"emu.term.screenshot  [<filename>]\n"
-		"emu.term.title       <title>\n"
-		"\n"
-		"emu.video.blink      <blink-rate>\n"
-		"emu.video.redraw     [\"now\"]\n"
-	);
+		pce_puts (
+			"emu.config.save      <filename>\n"
+			"emu.exit\n"
+			"emu.stop\n"
+			"emu.pause            \"0\" | \"1\"\n"
+			"emu.pause.toggle\n"
+			"emu.reset\n"
+			"\n"
+			"emu.cpu.model        \"8086\" | \"8088\" | \"80186\" | \"80188\"\n"
+			"emu.cpu.speed        <factor>\n"
+			"emu.cpu.speed.step   <adjustment>\n"
+			"\n"
+			"emu.disk.boot        <bootdrive>\n"
+			"emu.disk.commit      [<drive>]\n"
+			"emu.disk.eject       <drive>\n"
+			"emu.disk.insert      <drive>:<fname>\n"
+			"\n"
+			"emu.fdc.accurate     \"0\" | \"1\"\n"
+			"\n"
+			"emu.parport.driver   <driver>\n"
+			"emu.parport.file     <filename>\n"
+			"\n"
+			"emu.serport.driver   <driver>\n"
+			"emu.serport.file     <filename>\n"
+			"\n"
+			"emu.tape.append\n"
+			"emu.tape.file        <filename>\n"
+			"emu.tape.load        [<position> | \"end\"]\n"
+			"emu.tape.rewind\n"
+			"emu.tape.save        [<position> | \"end\"]\n"
+			"emu.tape.state\n"
+			"\n"
+			"emu.term.fullscreen  \"0\" | \"1\"\n"
+			"emu.term.fullscreen.toggle\n"
+			"emu.term.grab\n"
+			"emu.term.release\n"
+			"emu.term.screenshot  [<filename>]\n"
+			"emu.term.title       <title>\n"
+			"\n"
+			"emu.video.blink      <blink-rate>\n"
+			"emu.video.redraw     [\"now\"]\n"
+		);
 }
 
 static
@@ -1066,10 +1033,9 @@ void pc_cmd_pq (cmd_t *cmd, ibmpc_t *pc)
 static
 void pc_cmd_p (cmd_t *cmd, ibmpc_t *pc)
 {
-	unsigned       cnt, opcnt1, opcnt2;
-	unsigned short seg, ofs, seg2, ofs2;
+	unsigned short seg, ofs;
 	unsigned long  i, n;
-	int            brk, skip;
+	int            brk;
 	e86_disasm_t   op;
 
 	n = 1;
@@ -1094,12 +1060,6 @@ void pc_cmd_p (cmd_t *cmd, ibmpc_t *pc)
 		seg = e86_get_cs (pc->cpu);
 		ofs = e86_get_ip (pc->cpu);
 
-		cnt = pc->cpu->int_cnt;
-
-		if (pc->trace) {
-			pc_print_trace (pc->cpu);
-		}
-
 		while ((e86_get_cs (pc->cpu) == seg) && (e86_get_ip (pc->cpu) == ofs)) {
 			pc_clock (pc, 1);
 
@@ -1113,32 +1073,10 @@ void pc_cmd_p (cmd_t *cmd, ibmpc_t *pc)
 			break;
 		}
 
-		skip = 0;
-
 		if (op.flags & (E86_DFLAGS_CALL | E86_DFLAGS_LOOP)) {
-			seg2 = seg;
-			ofs2 = ofs + op.dat_n;
-			skip = 1;
-		}
-		else if (pc->cpu->int_cnt != cnt) {
-			seg2 = pc->cpu->int_cs;
-			ofs2 = pc->cpu->int_ip;
-			skip = 1;
-		}
+			unsigned short ofs2 = ofs + op.dat_n;
 
-		if (skip) {
-			opcnt1 = -e86_get_opcnt (pc->cpu);
-
-			while ((e86_get_cs (pc->cpu) != seg2) || (e86_get_ip (pc->cpu) != ofs2)) {
-				if (pc->trace) {
-					opcnt2 = e86_get_opcnt (pc->cpu);
-
-					if (opcnt1 != opcnt2) {
-						opcnt1 = opcnt2;
-						pc_print_trace (pc->cpu);
-					}
-				}
-
+			while ((e86_get_cs (pc->cpu) != seg) || (e86_get_ip (pc->cpu) != ofs2)) {
 				pc_clock (pc, 1);
 
 				if (pc_check_break (pc)) {
@@ -1217,6 +1155,9 @@ void pc_cmd_s (cmd_t *cmd, ibmpc_t *pc)
 		else if (cmd_match (cmd, "cpu")) {
 			prt_state_cpu (pc->cpu);
 		}
+		else if (cmd_match (cmd, "time")) {
+			prt_state_time (pc->cpu);
+		}
 		else if (cmd_match (cmd, "pit")) {
 			prt_state_pit (&pc->pit);
 		}
@@ -1264,30 +1205,6 @@ void pc_cmd_s (cmd_t *cmd, ibmpc_t *pc)
 }
 
 static
-void pc_cmd_trace (cmd_t *cmd, ibmpc_t *pc)
-{
-	unsigned short v;
-
-	if (cmd_match_eol (cmd)) {
-		pce_printf ("trace is %s\n", pc->trace ? "on" : "off");
-		return;
-	}
-
-	if (cmd_match (cmd, "on")) {
-		pc->trace = 1;
-	}
-	else if (cmd_match (cmd, "off")) {
-		pc->trace = 0;
-	}
-	else if (cmd_match_uint16 (cmd, &v)) {
-		pc->trace = (v != 0);
-	}
-	else {
-		cmd_error (cmd, "on or off expected\n");
-	}
-}
-
-static
 void pc_cmd_t (cmd_t *cmd, ibmpc_t *pc)
 {
 	unsigned long i, n;
@@ -1305,10 +1222,6 @@ void pc_cmd_t (cmd_t *cmd, ibmpc_t *pc)
 	pc_clock_discontinuity (pc);
 
 	for (i = 0; i < n; i++) {
-		if (pc->trace) {
-			pc_print_trace (pc->cpu);
-		}
-
 		pc_exec (pc);
 
 		if (pc_check_break (pc)) {
@@ -1416,9 +1329,6 @@ int pc_cmd (ibmpc_t *pc, cmd_t *cmd)
 	}
 	else if (cmd_match (cmd, "s")) {
 		pc_cmd_s (cmd, pc);
-	}
-	else if (cmd_match (cmd, "trace")) {
-		pc_cmd_trace (cmd, pc);
 	}
 	else if (cmd_match (cmd, "t")) {
 		pc_cmd_t (cmd, pc);

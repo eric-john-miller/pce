@@ -3,9 +3,9 @@
  *****************************************************************************/
 
 /*****************************************************************************
- * File name:   src/utils/pce-img/pce-img.c                                  *
+ * File name:   src/utils/pceimg/pce-img.c                                   *
  * Created:     2005-11-29 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2005-2018 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2005-2012 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -20,9 +20,10 @@
  *****************************************************************************/
 
 
+#include <config.h>
+
 #include "pce-img.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,42 +31,65 @@
 
 #include <drivers/block/block.h>
 #include <drivers/block/blkcow.h>
+#include <drivers/block/blkfdc.h>
 #include <drivers/block/blkraw.h>
-#include <drivers/block/blkpbi.h>
 #include <drivers/block/blkpce.h>
-#include <drivers/block/blkpsi.h>
 #include <drivers/block/blkqed.h>
 #include <drivers/block/blkdosem.h>
-#include <drivers/block/blkmakea.h>
 
-#include <drivers/psi/psi-img.h>
+#include <drivers/pfdc/pfdc-img.h>
 
 #include <lib/getopt.h>
-#include <lib/sysdep.h>
 
 
-const char *arg0 = NULL;
+#define DSK_NONE   0
+#define DSK_RAW    1
+#define DSK_PCE    2
+#define DSK_DOSEMU 3
+#define DSK_PFDC   4
+#define DSK_QED    5
 
-char                      par_quiet = 0;
 
-static unsigned           par_type_inp = DSK_NONE;
-static unsigned           par_type_out = DSK_NONE;
-static unsigned           par_type_cow = DSK_NONE;
+static const char    *argv0 = NULL;
 
-static unsigned long      par_c = 0;
-static unsigned long      par_h = 0;
-static unsigned long      par_s = 0;
-static unsigned long      par_n = 0;
-static unsigned long long par_ofs = 0;
-static unsigned long      par_min_cluster_size = 0;
+static int           par_quiet = 0;
 
-static unsigned long      par_buf_size = 0;
-static unsigned char      *par_buf = NULL;
+static unsigned long par_min_cluster_size = 0;
 
 
 static pce_option_t opts_main[] = {
 	{ '?', 0, "help", NULL, "Print usage information" },
 	{ 'V', 0, "version", NULL, "Print version information" },
+	{  -1, 0, NULL, NULL, NULL }
+};
+
+static pce_option_t opts_create[] = {
+	{ 'c', 1, "cylinders", "int", "Set the number of cylinders [0]" },
+	{ 'C', 1, "min-cluster-size", "int", "Set the minimum cluster size for QED [0]" },
+	{ 'f', 1, "offset", "int", "Set the data offset [0]" },
+	{ 'g', 3, "geometry", "3*int", "Set the disk geometry (c h s)" },
+	{ 'h', 1, "heads", "int", "Set the number of heads [0]" },
+	{ 'm', 1, "megabytes", "int", "Set the disk size in megabytes [0]" },
+	{ 'n', 1, "size", "int", "Set the disk size in 512 byte blocks [0]" },
+	{ 'o', 1, "output", "string", "Set the output file name [stdout]" },
+	{ 'q', 0, "quiet", NULL, "Be quiet [no]" },
+	{ 's', 1, "sectors", "int", "Set the number of sectors per track [0]" },
+	{  -1, 0, NULL, NULL, NULL }
+};
+
+static pce_option_t opts_convert[] = {
+	{ 'c', 1, "cylinders", "int", "Set the number of cylinders [0]" },
+	{ 'C', 1, "min-cluster-size", "int", "Set the minimum cluster size for QED [0]" },
+	{ 'f', 1, "offset", "int", "Set the data offset [0]" },
+	{ 'g', 3, "geometry", "3*int", "Set the disk geometry (c h s)" },
+	{ 'h', 1, "heads", "int", "Set the number of heads [0]" },
+	{ 'i', 1, "input", "string", "Set the input file name [stdin]" },
+	{ 'm', 1, "megabytes", "int", "Set the disk size in megabytes [0]" },
+	{ 'n', 1, "size", "int", "Set the disk size in 512 byte blocks [0]" },
+	{ 'o', 1, "output", "string", "Set the output file name [stdout]" },
+	{ 'q', 0, "quiet", NULL, "Be quiet [no]" },
+	{ 's', 1, "sectors", "int", "Set the number of sectors per track [0]" },
+	{ 'w', 1, "cow", "string", "Set the COW file name [none]" },
 	{  -1, 0, NULL, NULL, NULL }
 };
 
@@ -79,132 +103,52 @@ void print_help (void)
 		opts_main
 	);
 
+	fputs ("\n", stdout);
+
+	pce_getopt_help (
+		NULL,
+		"usage: pce-img create [options] [output]",
+		opts_create
+	);
+
+	fputs ("\n", stdout);
+
+	pce_getopt_help (
+		NULL,
+		"usage: pce-img convert [options] [input [output]]",
+		opts_convert
+	);
+
 	fputs (
-		"\ncommands:\n"
-		"  commit   Commit changes in COW files\n"
-		"  convert  Convert images\n"
-		"  cow      Create COW files\n"
-		"  create   Create images\n"
-		"  info     Show information about images\n"
-		"  rebase   Rebase images\n"
-		"\nformats:\n"
-		"  dosemu, img, makeab, pbi, pimg, psi, qed\n",
+		"\nfile names: <format>:<name>\n"
+		"formats:    raw, pce, dosemu, pfdc, qed\n",
 		stdout
 	);
 
 	fflush (stdout);
 }
 
+static
 void print_version (void)
 {
 	fputs (
 		"pce-img version " PCE_VERSION_STR
 		"\n\n"
-		"Copyright (C) 2005-2018 Hampa Hug <hampa@hampa.ch>\n",
+		"Copyright (C) 2005-2012 Hampa Hug <hampa@hampa.ch>\n",
 		stdout
 	);
 
 	fflush (stdout);
 }
 
-void print_disk_info (disk_t *dsk, const char *name)
-{
-	if (par_quiet) {
-		return;
-	}
-
-	fprintf (stdout, "%s: %.3f MiB (%lu/%lu/%lu)\n",
-		name,
-		(double) dsk->blocks / (2 * 1024),
-		(unsigned long) dsk->c,
-		(unsigned long) dsk->h,
-		(unsigned long) dsk->s
-	);
-}
-
-const char *pce_get_type_name (unsigned type)
-{
-	switch (type) {
-	case PCE_DISK_NONE:
-		return ("none");
-
-	case PCE_DISK_RAW:
-		return ("raw");
-
-	case PCE_DISK_RAM:
-		return ("ram");
-
-	case PCE_DISK_PCE:
-		return ("pimg");
-
-	case PCE_DISK_DOSEMU:
-		return ("dosemu");
-
-	case PCE_DISK_COW:
-		return ("cow");
-
-	case PCE_DISK_PSI:
-		return ("psi");
-
-	case PCE_DISK_QED:
-		return ("qed");
-
-	case PCE_DISK_PBI:
-		return ("pbi");
-
-	case PCE_DISK_MAKEAB:
-		return ("makeab");
-	}
-
-	return ("unknown");
-}
-
-static
-unsigned pce_get_type (const char *str)
-{
-	if ((strcmp (str, "raw") == 0) || (strcmp (str, "img") == 0)) {
-		return (DSK_RAW);
-	}
-
-	if (strcmp (str, "pimg") == 0) {
-		return (DSK_PIMG);
-	}
-
-	if (strcmp (str, "qed") == 0) {
-		return (DSK_QED);
-	}
-
-	if (strcmp (str, "pbi") == 0) {
-		return (DSK_PBI);
-	}
-
-	if (strcmp (str, "dosemu") == 0) {
-		return (DSK_DOSEMU);
-	}
-
-	if (strcmp (str, "psi") == 0) {
-		return (DSK_PSI);
-	}
-
-	if (strcmp (str, "makeab") == 0) {
-		return (DSK_MAKEAB);
-	}
-
-	return (DSK_NONE);
-}
 
 /*
  * Guess the image type based on the file name extension.
  */
 static
-unsigned pce_get_type_ext (const char *str, unsigned type)
+unsigned pce_get_disk_type_ext (const char *str)
 {
-	unsigned   ret;
 	const char *ext;
-
-	if (type != DSK_NONE) {
-		return (type);
-	}
 
 	ext = NULL;
 
@@ -220,238 +164,89 @@ unsigned pce_get_type_ext (const char *str, unsigned type)
 		return (DSK_NONE);
 	}
 
-	if (strcasecmp (ext, "cow") == 0) {
-		ret = DSK_PBI;
+	if (strcasecmp (ext, "img") == 0) {
+		return (DSK_RAW);
 	}
-	else if (strcasecmp (ext, "makeab") == 0) {
-		ret = DSK_MAKEAB;
+	else if (strcasecmp (ext, "pimg") == 0) {
+		return (DSK_PCE);
 	}
-	else {
-		ret = pce_get_type (ext);
+	else if (strcasecmp (ext, "qed") == 0) {
+		return (DSK_QED);
+	}
+	else if (strcasecmp (ext, "raw") == 0) {
+		return (DSK_RAW);
+	}
+	else if (pfdc_guess_type (str) != PFDC_FORMAT_NONE) {
+		return (DSK_PFDC);
 	}
 
-	return (ret);
+	return (DSK_NONE);
 }
 
-void pce_set_quiet (int val)
+static
+unsigned pce_get_disk_type (const char *str)
 {
-	par_quiet = (val != 0);
-}
+	unsigned i;
+	char     buf[256];
 
-int pce_set_n (const char *str)
-{
-	unsigned long long size;
-	char               *end;
-
-	if (strcmp (str, "auto") == 0) {
-		par_n = par_c * par_h * par_s;
-	}
-	else {
-		size = strtoull (str, &end, 0);
-
-		if (toupper (*end) == 'K') {
-			end += 1;
-			size *= 1024;
-		}
-		else if (toupper (*end) == 'M') {
-			end += 1;
-			size *= 1024Ul * 1024UL;
-		}
-		else if (toupper (*end) == 'G') {
-			end += 1;
-			size *= 1024Ul * 1024UL * 1024UL;
-		}
-		else if (toupper (*end) == 'T') {
-			end += 1;
-			size *= 1024Ul * 1024UL * 1024UL;
-			size *= 1024;
-		}
-		else if (toupper (*end) == 'B') {
-			end += 1;
-		}
-		else {
-			size *= 512;
+	i = 0;
+	while (str[i] != ':') {
+		if (str[i] == 0) {
+			return (pce_get_disk_type_ext (str));
 		}
 
-		if (*end != 0) {
-			fprintf (stderr, "%s: bad image size (%s)\n", arg0, str	);
-			return (1);
+		if (i >= 256) {
+			return (DSK_NONE);
 		}
 
-		par_n = size / 512;
+		buf[i] = str[i];
+
+		i += 1;
 	}
 
-	return (0);
+	buf[i] = 0;
+
+	if ((strcmp (buf, "raw") == 0) || (strcmp (buf, "img") == 0)) {
+		return (DSK_RAW);
+	}
+
+	if ((strcmp (buf, "pce") == 0) || (strcmp (buf, "pimg") == 0)) {
+		return (DSK_PCE);
+	}
+
+	if (strcmp (buf, "qed") == 0) {
+		return (DSK_QED);
+	}
+
+	if (strcmp (buf, "dosemu") == 0) {
+		return (DSK_DOSEMU);
+	}
+
+	if (strcmp (buf, "pfdc") == 0) {
+		return (DSK_PFDC);
+	}
+
+	return (DSK_NONE);
 }
 
-int pce_set_c (const char *str)
+static
+const char *pce_get_disk_name (const char *str)
 {
-	char          *end;
-	unsigned long h, s;
+	unsigned i;
 
-	if (strcmp (str, "auto") == 0) {
-		s = (par_s > 0) ? par_s : 63;
-		h = (par_h > 0) ? par_h : 16;
-
-		par_c = par_n / (h * s);
-	}
-	else {
-		par_c = strtoul (str, &end, 0);
-
-		if (*end != 0) {
-			fprintf (stderr, "%s: bad cylinder (%s)\n", arg0, str);
-			return (1);
-		}
-	}
-
-	return (0);
-}
-
-int pce_set_h (const char *str)
-{
-	char          *end;
-	unsigned long c, s;
-
-	if (strcmp (str, "auto") == 0) {
-		s = (par_s > 0) ? par_s : 63;
-		c = (par_c > 0) ? par_c : 1024;
-
-		par_h = par_n / (c * s);
-	}
-	else {
-		par_h = strtoul (str, &end, 0);
-
-		if (*end != 0) {
-			fprintf (stderr, "%s: bad head (%s)\n", arg0, str);
-			return (1);
-		}
-	}
-
-	return (0);
-}
-
-int pce_set_s (const char *str)
-{
-	char          *end;
-	unsigned long c, h;
-
-	if (strcmp (str, "auto") == 0) {
-		h = (par_h > 0) ? par_h : 16;
-		c = (par_c > 0) ? par_c : 1024;
-
-		par_s = par_n / (c * h);
-	}
-	else {
-		par_s = strtoul (str, &end, 0);
-
-		if (*end != 0) {
-			fprintf (stderr, "%s: bad sector (%s)\n", arg0, str);
-			return (1);
-		}
-	}
-
-	return (0);
-}
-
-int pce_set_geo (const char *c, const char *h, const char *s)
-{
-	if (pce_set_c (c)) {
-		return (1);
-	}
-
-	if (pce_set_h (h)) {
-		return (1);
-	}
-
-	if (pce_set_s (s)) {
-		return (1);
-	}
-
-	return (0);
-}
-
-int pce_set_ofs (const char *str)
-{
-	char *end;
-
-	par_ofs = strtoul (str, &end, 0);
-
-	if (*end != 0) {
-		fprintf (stderr, "%s: bad offset (%s)\n", arg0, str);
-		return (1);
-	}
-
-	return (0);
-}
-
-int pce_set_min_cluster_size (const char *str)
-{
-	char *end;
-
-	par_min_cluster_size = strtoul (str, &end, 0);
-
-	if (*end != 0) {
-		fprintf (stderr, "%s: bad cluster size (%s)\n", arg0, str);
-		return (1);
-	}
-
-	return (0);
-}
-
-int pce_set_type_inp (const char *str)
-{
-	par_type_inp = pce_get_type (str);
-
-	if (par_type_inp == DSK_NONE) {
-		fprintf (stderr, "%s: unknown disk type (%s)\n", arg0, str);
-		return (1);
-	}
-
-	return (0);
-}
-
-int pce_set_type_out (const char *str)
-{
-	par_type_out = pce_get_type (str);
-
-	if (par_type_out == DSK_NONE) {
-		fprintf (stderr, "%s: unknown disk type (%s)\n", arg0, str);
-		return (1);
-	}
-
-	return (0);
-}
-
-int pce_set_type_cow (const char *str)
-{
-	par_type_cow = pce_get_type (str);
-
-	if (par_type_cow == DSK_NONE) {
-		fprintf (stderr, "%s: unknown disk type (%s)\n", arg0, str);
-		return (1);
-	}
-
-	return (0);
-}
-
-unsigned char *pce_get_buf (unsigned long size)
-{
-	unsigned char *ret;
-
-	if (size > par_buf_size) {
-		if ((ret = realloc (par_buf, size)) == NULL) {
-			return (NULL);
+	i = 0;
+	while (str[i] != ':') {
+		if (str[i] == 0) {
+			return (str);
 		}
 
-		par_buf = ret;
-		par_buf_size = size;
-
-		return (ret);
+		i += 1;
 	}
 
-	return (par_buf);
+	return (str + i + 1);
 }
 
+static
 int pce_block_is_null (const void *buf, unsigned cnt)
 {
 	unsigned            i;
@@ -468,266 +263,452 @@ int pce_block_is_null (const void *buf, unsigned cnt)
 	return (1);
 }
 
-int pce_block_is_uniform_32 (const void *buf, unsigned cnt, unsigned long *val)
+static
+int dsk_create (const char *str, uint32_t n, uint32_t c, uint32_t h, uint32_t s,
+	uint64_t ofs)
 {
-	unsigned            i;
-	const unsigned char *tmp;
+	unsigned   type;
+	const char *name;
 
-	tmp = buf;
-
-	for (i = 4; i < cnt; i++) {
-		if (tmp[i] != tmp[i & 3]) {
-			return (0);
-		}
-	}
-
-	*val = dsk_get_uint32_be (buf, 0);
-
-	return (1);
-}
-
-int pce_file_exists (const char *name)
-{
-	FILE *fp;
-
-	if ((fp = fopen (name, "rb")) == NULL) {
-		return (0);
-	}
-
-	fclose (fp);
-
-	return (1);
-}
-
-void pce_set_disk_parameters (disk_t *dsk)
-{
-	if (dsk == NULL) {
-		return;
-	}
-
-	par_c = dsk->c;
-	par_h = dsk->h;
-	par_s = dsk->s;
-	par_n = dsk->blocks;
-}
-
-int dsk_create (const char *name, unsigned type)
-{
-	int r;
-
-	if ((type = pce_get_type_ext (name, type)) == DSK_NONE) {
-		return (1);
-	}
-
-	if (par_n == 0) {
-		par_n = (unsigned long) par_c * par_h * par_s;
-	}
-
-	if (par_c == 0) {
-		if ((par_h != 0) && (par_s != 0)) {
-			par_c = par_n / (par_h * par_s);
-		}
-	}
+	type = pce_get_disk_type (str);
+	name = pce_get_disk_name (str);
 
 	switch (type) {
 	case DSK_RAW:
-		r = dsk_img_create (name, par_n, par_ofs);
-		break;
+		return (dsk_img_create (name, n, ofs));
 
-	case DSK_PIMG:
-		r = dsk_pce_create (name, par_n, par_c, par_h, par_s, par_ofs & 0xffffffff);
-		break;
-
-	case DSK_PBI:
-		r = dsk_pbi_create (name, par_n, par_c, par_h, par_s, par_min_cluster_size);
-		break;
+	case DSK_PCE:
+		return (dsk_pce_create (name, n, c, h, s, ofs & 0xffffffff));
 
 	case DSK_QED:
-		r = dsk_qed_create (name, par_n, par_min_cluster_size);
-		break;
+		return (dsk_qed_create (name, n, par_min_cluster_size));
 
 	case DSK_DOSEMU:
-		r = dsk_dosemu_create (name, par_c, par_h, par_s, par_ofs & 0xffffffff);
-		break;
+		return (dsk_dosemu_create (name, c, h, s, ofs & 0xffffffff));
 
-	case DSK_PSI:
-		r = dsk_psi_create (name, PSI_FORMAT_NONE, par_c, par_h, par_s);
-		break;
-
-	case DSK_MAKEAB:
-		r = dsk_makeab_create (name, par_n, par_c, par_h, par_s);
-		break;
-
-	default:
-		r = dsk_pce_create (name, par_n, par_c, par_h, par_s, par_ofs & 0xffffffff);
-		break;
+	case DSK_PFDC:
+		return (dsk_fdc_create (name, PFDC_FORMAT_NONE, c, h, s));
 	}
 
-	return (r);
+	return (dsk_pce_create (name, n, c, h, s, ofs & 0xffffffff));
 }
 
 static
-disk_t *dsk_open (const char *name, unsigned type, int ro)
+disk_t *dsk_open (const char *str, uint32_t n, uint32_t c, uint32_t h, uint32_t s,
+	uint64_t ofs, int ro)
 {
-	disk_t *dsk;
+	unsigned   type;
+	const char *name;
 
-	type = pce_get_type_ext (name, type);
+	type = pce_get_disk_type (str);
+	name = pce_get_disk_name (str);
 
 	switch (type) {
 	case DSK_RAW:
-		dsk = dsk_img_open (name, par_ofs, ro);
-		break;
+		return (dsk_img_open (name, ofs, ro));
 
-	case DSK_PIMG:
-		dsk = dsk_pce_open (name, ro);
-		break;
-
-	case DSK_PBI:
-		dsk = dsk_pbi_open (name, ro);
-		break;
+	case DSK_PCE:
+		return (dsk_pce_open (name, ro));
 
 	case DSK_QED:
-		dsk = dsk_qed_open (name, ro);
-		break;
+		return (dsk_qed_open (name, ro));
 
 	case DSK_DOSEMU:
-		dsk = dsk_dosemu_open (name, ro);
-		break;
+		return (dsk_dosemu_open (name, ro));
 
-	case DSK_PSI:
-		dsk = dsk_psi_open (name, PSI_FORMAT_NONE, ro);
-		break;
-
-	case DSK_MAKEAB:
-		dsk = dsk_makeab_open (name, ro);
-		break;
-
-	default:
-		dsk = dsk_auto_open (name, par_ofs, ro);
-		break;
+	case DSK_PFDC:
+		return (dsk_fdc_open (name, PFDC_FORMAT_NONE, ro));
 	}
 
-	return (dsk);
+	return (dsk_auto_open (name, ofs, ro));
 }
 
-disk_t *dsk_open_inp (const char *name, disk_t *dsk, int ro)
+static
+int dsk_copy (disk_t *dst, disk_t *src)
 {
-	if (dsk != NULL) {
-		dsk_del (dsk);
+	uint32_t      i, n, m;
+	uint32_t      prg_i, prg_n;
+	unsigned      k;
+	uint16_t      msk;
+	unsigned char buf[8192];
+
+	n = dsk_get_block_cnt (dst);
+	m = dsk_get_block_cnt (src);
+
+	if (m < n) {
+		n = m;
 	}
 
-	if ((dsk = dsk_open (name, par_type_inp, ro)) == NULL) {
-		fprintf (stderr, "%s: can't open input file (%s)\n", arg0, name);
-		return (NULL);
+	prg_i = 0;
+	prg_n = n;
+
+	i = 0;
+	while (n > 0) {
+		m = (n < 16) ? n : 16;
+
+		if (dsk_read_lba (src, buf, i, m)) {
+			return (1);
+		}
+
+		msk = 0;
+		for (k = 0; k < m; k++) {
+			if (pce_block_is_null (buf + 512 * k, 512) == 0) {
+				msk |= 1U << k;
+			}
+		}
+
+		if (msk == 0xffff) {
+			if (dsk_write_lba (dst, buf, i, m)) {
+				return (1);
+			}
+		}
+		else if (msk != 0) {
+			for (k = 0; k < m; k++) {
+				if (msk & (1U << k)) {
+					if (dsk_write_lba (dst, buf + 512 * k, i + k, 1)) {
+						return (1);
+					}
+				}
+			}
+		}
+
+		i += m;
+		n -= m;
+
+		if (par_quiet == 0) {
+			prg_i += m;
+			if (prg_i >= 4096) {
+				fprintf (stdout, "[%6.2f%%] block %lu of %lu\r",
+					(100.0 * (i + 1)) / prg_n,
+					(unsigned long) i,
+					(unsigned long) prg_n
+				);
+
+				prg_i = 0;
+
+				fflush (stdout);
+			}
+		}
 	}
 
-	pce_set_disk_parameters (dsk);
-	print_disk_info (dsk, name);
+	if (par_quiet == 0) {
+		fprintf (stdout, "[%6.2f%%] block %lu of %lu\n",
+			100.0, (unsigned long) prg_n, (unsigned long) prg_n
+		);
+	}
 
-	return (dsk);
+	return (0);
 }
 
-disk_t *dsk_open_out (const char *name, disk_t *dsk)
+static
+int main_create (int argc, char **argv)
 {
-	if (dsk != NULL) {
-		dsk_del (dsk);
+	int      r;
+	char     **optarg;
+	char     *par_out = NULL;
+	uint32_t par_c = 0;
+	uint32_t par_h = 0;
+	uint32_t par_s = 0;
+	uint32_t par_n = 0;
+	uint64_t par_ofs = 0;
+
+	while (1) {
+		r = pce_getopt (argc, argv, &optarg, opts_convert);
+
+		if (r == GETOPT_DONE) {
+			break;
+		}
+
+		if (r < 0) {
+			return (1);
+		}
+
+		switch (r) {
+		case '?':
+			print_help();
+			return (0);
+
+		case 'V':
+			print_version();
+			return (0);
+
+		case 'c':
+			par_c = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'C':
+			par_min_cluster_size = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'f':
+			par_ofs = strtoull (optarg[0], NULL, 0);
+			break;
+
+		case 'g':
+			par_c = strtoul (optarg[0], NULL, 0);
+			par_h = strtoul (optarg[1], NULL, 0);
+			par_s = strtoul (optarg[2], NULL, 0);
+			break;
+
+		case 'h':
+			par_h = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'm':
+			par_n = strtoul (optarg[0], NULL, 0);
+			par_n *= 2048;
+			break;
+
+		case 'n':
+			par_n = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'o':
+			par_out = optarg[0];
+			break;
+
+		case 'q':
+			par_quiet = 1;
+			break;
+
+		case 's':
+			par_s = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 0:
+			if (par_out == NULL) {
+				par_out = optarg[0];
+			}
+			else {
+				fprintf (stderr, "%s: too many file names (%s)\n",
+					argv0, optarg[0]
+				);
+				return (1);
+			}
+			break;
+
+		default:
+			return (1);
+		}
 	}
 
-	if ((dsk = dsk_open (name, par_type_out, 0)) == NULL) {
-		fprintf (stderr, "%s: can't open output file (%s)\n", arg0, name);
-		return (NULL);
+	dsk_adjust_chs (&par_n, &par_c, &par_h, &par_s);
+
+	if (par_quiet == 0) {
+		fprintf (stdout, "geometry: %lu/%lu/%lu (%luM at %llu)\n",
+			(unsigned long) par_c,
+			(unsigned long) par_h,
+			(unsigned long) par_s,
+			(unsigned long) (par_n / (2 * 1024)),
+			(unsigned long long) par_ofs
+		);
 	}
 
-	pce_set_disk_parameters (dsk);
-	print_disk_info (dsk, name);
+	if (par_out == NULL) {
+		fprintf (stderr, "%s: need a file name\n", argv0);
+		return (1);
+	}
 
-	return (dsk);
+	if (dsk_create (par_out, par_n, par_c, par_h, par_s, par_ofs)) {
+		fprintf (stderr, "%s: create failed (%s)\n", argv0, par_out);
+		return (1);
+	}
+
+	return (1);
 }
 
-disk_t *dsk_create_out (const char *name, disk_t *dsk)
+static
+int main_convert (int argc, char **argv)
 {
-	if (dsk != NULL) {
-		dsk_del (dsk);
+	int        r;
+	char       **optarg;
+	const char *par_inp = NULL;
+	const char *par_out = NULL;
+	const char *par_cow = NULL;
+	uint32_t   par_c = 0;
+	uint32_t   par_h = 0;
+	uint32_t   par_s = 0;
+	uint32_t   par_n = 0;
+	uint64_t   par_ofs = 0;
+	disk_t     *inp, *out, *cow;
+
+	while (1) {
+		r = pce_getopt (argc, argv, &optarg, opts_convert);
+
+		if (r == GETOPT_DONE) {
+			break;
+		}
+
+		if (r < 0) {
+			return (1);
+		}
+
+		switch (r) {
+		case '?':
+			print_help();
+			return (0);
+
+		case 'V':
+			print_version();
+			return (0);
+
+		case 'c':
+			par_c = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'C':
+			par_min_cluster_size = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'f':
+			par_ofs = strtoull (optarg[0], NULL, 0);
+			break;
+
+		case 'g':
+			par_c = strtoul (optarg[0], NULL, 0);
+			par_h = strtoul (optarg[1], NULL, 0);
+			par_s = strtoul (optarg[2], NULL, 0);
+			break;
+
+		case 'h':
+			par_h = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'i':
+			par_inp = optarg[0];
+			break;
+
+		case 'm':
+			par_n = strtoul (optarg[0], NULL, 0);
+			par_n *= 2048;
+			break;
+
+		case 'n':
+			par_n = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'o':
+			par_out = optarg[0];
+			break;
+
+		case 'q':
+			par_quiet = 1;
+			break;
+
+		case 's':
+			par_s = strtoul (optarg[0], NULL, 0);
+			break;
+
+		case 'w':
+			par_cow = optarg[0];
+			break;
+
+		case 0:
+			if (par_inp == NULL) {
+				par_inp = optarg[0];
+			}
+			else if (par_out == NULL) {
+				par_out = optarg[0];
+			}
+			else {
+				fprintf (stderr, "%s: too many file names (%s)\n",
+					argv0, optarg[0]
+				);
+				return (1);
+			}
+			break;
+
+		default:
+			return (1);
+		}
 	}
 
-	if (dsk_create (name, par_type_out)) {
-		fprintf (stderr, "%s: can't create output file (%s)\n", arg0, name);
-		return (NULL);
+	if (par_inp == NULL) {
+		fprintf (stderr, "%s: need an input file name\n", argv0);
+		return (1);
 	}
 
-	if ((dsk = dsk_open (name, par_type_out, 0)) == NULL) {
-		fprintf (stderr, "%s: can't create output file (%s)\n", arg0, name);
-		return (NULL);
+	if (par_out == NULL) {
+		fprintf (stderr, "%s: need an output file name\n", argv0);
+		return (1);
 	}
 
-	dsk_set_geometry (dsk, par_n, par_c, par_h, par_s);
-	pce_set_disk_parameters (dsk);
-	print_disk_info (dsk, name);
-
-	return (dsk);
-}
-
-disk_t *pce_cow_create (disk_t *dsk, const char *name)
-{
-	disk_t *cow;
-
-	switch (par_type_cow) {
-	case DSK_NONE:
-	case DSK_PBI:
-		cow = dsk_pbi_cow_create (dsk, name, par_n, par_c, par_h, par_s, par_min_cluster_size);
-		break;
-
-	case DSK_QED:
-		cow = dsk_qed_cow_create (dsk, name, par_n, par_min_cluster_size);
-		break;
-
-	default:
-		cow = NULL;
-		break;
+	inp = dsk_open (par_inp, par_n, par_c, par_h, par_s, par_ofs, 1);
+	if (inp == NULL) {
+		fprintf (stderr, "%s: can't open input file (%s)\n",
+			argv0, par_inp
+		);
+		return (1);
 	}
 
-	if (cow == NULL) {
-		fprintf (stderr, "%s: can't create cow file (%s)\n", arg0, name);
-		return (NULL);
+	if (par_cow != NULL) {
+		cow = inp;
+
+		inp = dsk_qed_cow_new (cow, par_cow);
+
+		if (inp == NULL) {
+			inp = dsk_cow_new (cow, par_cow);
+		}
+
+		if (inp == NULL) {
+			dsk_del (cow);
+			fprintf (stderr, "%s: can't open COW file (%s)\n",
+				argv0, par_cow
+			);
+			return (1);
+		}
 	}
 
-	pce_set_disk_parameters (dsk);
-	print_disk_info (cow, name);
-
-	return (cow);
-}
-
-disk_t *pce_cow_open (disk_t *dsk, const char *name)
-{
-	disk_t *cow;
-
-	switch (par_type_cow) {
-	case DSK_NONE:
-		cow = dsk_open_cow (dsk, name);
-		break;
-
-	case DSK_PBI:
-		cow = dsk_pbi_cow_open (dsk, name);
-		break;
-
-	case DSK_QED:
-		cow = dsk_qed_cow_open (dsk, name);
-		break;
-
-	default:
-		cow = NULL;
-		break;
+	if (par_c == 0) {
+		par_c = inp->c;
 	}
 
-	if (cow == NULL) {
-		fprintf (stderr, "%s: can't open cow file (%s)\n", arg0, name);
-		return (NULL);
+	if (par_h == 0) {
+		par_h = inp->h;
 	}
 
-	pce_set_disk_parameters (cow);
-	print_disk_info (cow, name);
+	if (par_s == 0) {
+		par_s = inp->s;
+	}
 
-	return (cow);
+	if (par_n == 0) {
+		par_n = inp->blocks;
+	}
+
+	if (par_quiet == 0) {
+		fprintf (stdout, "geometry: %lu/%lu/%lu (%luM at %llu)\n",
+			(unsigned long) par_c,
+			(unsigned long) par_h,
+			(unsigned long) par_s,
+			(unsigned long) (par_n / (2 * 1024)),
+			(unsigned long long) par_ofs
+		);
+	}
+
+	if (dsk_create (par_out, par_n, par_c, par_h, par_s, par_ofs)) {
+		fprintf (stderr, "%s: can't create output file (%s)\n",
+			argv0, par_out
+		);
+		return (1);
+	}
+
+	out = dsk_open (par_out, par_n, par_c, par_h, par_s, par_ofs, 0);
+	if (out == NULL) {
+		fprintf (stderr, "%s: can't open output file (%s)\n",
+			argv0, par_out
+		);
+		return (1);
+	}
+
+	if (dsk_copy (out, inp)) {
+		fprintf (stderr, "%s: copy failed\n", argv0);
+		return (1);
+	}
+
+	dsk_del (out);
+	dsk_del (inp);
+
+	return (0);
 }
 
 int main (int argc, char **argv)
@@ -740,7 +721,7 @@ int main (int argc, char **argv)
 		return (1);
 	}
 
-	arg0 = argv[0];
+	argv0 = argv[0];
 
 	while (1) {
 		r = pce_getopt (argc, argv, &optarg, opts_main);
@@ -763,30 +744,21 @@ int main (int argc, char **argv)
 			return (0);
 
 		case 0:
-			if (strcmp (optarg[0], "commit") == 0) {
-				return (main_commit (argc, argv));
-			}
-			else if (strcmp (optarg[0], "convert") == 0) {
-				return (main_convert (argc, argv));
-			}
-			else if (strcmp (optarg[0], "cow") == 0) {
-				return (main_cow (argc, argv));
+			if (strcmp (optarg[0], "new") == 0) {
+				return (main_create (argc, argv));
 			}
 			else if (strcmp (optarg[0], "create") == 0) {
 				return (main_create (argc, argv));
 			}
-			else if (strcmp (optarg[0], "info") == 0) {
-				return (main_info (argc, argv));
+			else if (strcmp (optarg[0], "conv") == 0) {
+				return (main_convert (argc, argv));
 			}
-			else if (strcmp (optarg[0], "new") == 0) {
-				return (main_create (argc, argv));
-			}
-			else if (strcmp (optarg[0], "rebase") == 0) {
-				return (main_rebase (argc, argv));
+			else if (strcmp (optarg[0], "convert") == 0) {
+				return (main_convert (argc, argv));
 			}
 			else {
 				fprintf (stderr, "%s: unknown command (%s)\n",
-					arg0, optarg[0]
+					argv0, optarg[0]
 				);
 				return (1);
 			}

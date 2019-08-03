@@ -25,40 +25,17 @@
 #define PCE_VIDEO_PLANTRONICS_H 1
 
 
-#include <chipset/e6845.h>
-#include <devices/memory.h>
-#include <devices/video/video.h>
-#include <drivers/video/terminal.h>
 #include <libini/libini.h>
 
-
-typedef struct {
-	video_t             video;
-	e6845_t             crtc;
-
-	mem_blk_t           *memblk;
-	unsigned char       *mem;
-
-	mem_blk_t           *regblk;
-	unsigned char       *reg;
-
-	terminal_t          *term;
-
-	const unsigned char *font;
-
-	unsigned long       clock;
-
-	unsigned char       mod_cnt;
-
-	unsigned char       pal[4];
-
-	char                blink;
-	unsigned            blink_cnt;
-	unsigned            blink_rate;
-} plantronics_t;
+#include <devices/video/video.h>
+#include <devices/video/cga.h>
 
 
-plantronics_t *pla_new (unsigned long io, unsigned long addr);
+void pla_init (cga_t *pla, unsigned long io, unsigned long addr, unsigned long size);
+
+void pla_free (cga_t *pla);
+
+cga_t *pla_new (unsigned long io, unsigned long addr, unsigned long size);
 
 video_t *pla_new_ini (ini_sct_t *sct);
 

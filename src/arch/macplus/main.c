@@ -139,6 +139,10 @@ void sig_segv (int s)
 
 void sig_term (int s)
 {
+	if (par_sim != NULL) {
+		mac_del (par_sim);
+	}
+
 	pce_set_fd_interactive (0, 1);
 
 	fprintf (stderr, "pce-macplus: signal %d\n", s);
@@ -179,7 +183,7 @@ void mac_log_deb (const char *msg, ...)
 	unsigned long pc;
 
 	if (par_sim != NULL) {
-		pc = e68_get_last_pc (par_sim->cpu, 0);
+		pc = e68_get_pc (par_sim->cpu);
 	}
 	else {
 		pc = 0;

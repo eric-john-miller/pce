@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/devices/video/ega.c                                      *
  * Created:     2003-09-06 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2003-2014 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2003-2013 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -58,8 +58,6 @@
 #define EGA_MOUT          0x1c		/* miscellaneous output register */
 #define EGA_GRC_INDEX     0x1e		/* graphics controller index register */
 #define EGA_GRC_DATA      0x1f		/* graphics controller data register */
-#define EGA_CRT_INDEX0    0x20		/* crtc index register */
-#define EGA_CRT_DATA0     0x21		/* crtc data register */
 #define EGA_CRT_INDEX     0x24		/* crtc index register */
 #define EGA_CRT_DATA      0x25		/* crtc data register */
 #define EGA_STATUS1       0x2a		/* input status register 1 */
@@ -1363,11 +1361,9 @@ unsigned char ega_reg_get_uint8 (ega_t *ega, unsigned long addr)
 	case EGA_MOUT: /* 3CC */
 		return (ega_get_misc_out (ega));
 
-	case EGA_CRT_INDEX0: /* 3D0 */
 	case EGA_CRT_INDEX: /* 3D4 */
 		return (ega_get_crtc_index (ega));
 
-	case EGA_CRT_DATA0: /* 3D1 */
 	case EGA_CRT_DATA: /* 3D5 */
 		return (ega_get_crtc_data (ega));
 
@@ -1522,18 +1518,15 @@ void ega_reg_set_uint8 (ega_t *ega, unsigned long addr, unsigned char val)
 
 	case EGA_GRC_INDEX: /* 3CE */
 		ega_set_grc_index (ega, val);
-		break;
 
 	case EGA_GRC_DATA: /* 3CF */
 		ega_set_grc_data (ega, val);
 		break;
 
-	case EGA_CRT_INDEX0: /* 3D0 */
 	case EGA_CRT_INDEX: /* 3D4 */
 		ega_set_crtc_index (ega, val);
 		break;
 
-	case EGA_CRT_DATA0: /* 3D1 */
 	case EGA_CRT_DATA: /* 3D5 */
 		ega_set_crtc_data (ega, val);
 		break;

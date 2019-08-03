@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/drivers/block/block.c                                    *
  * Created:     2003-04-14 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2003-2018 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2003-2012 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -20,21 +20,19 @@
  *****************************************************************************/
 
 
-#include <drivers/block/block.h>
+#include "block.h"
 
-#include <drivers/block/blkdosem.h>
-#include <drivers/block/blkpbi.h>
-#include <drivers/block/blkpce.h>
-#include <drivers/block/blkpsi.h>
-#include <drivers/block/blkqed.h>
-#include <drivers/block/blkraw.h>
-#include <drivers/block/blkmakea.h>
+#include "blkraw.h"
+#include "blkpce.h"
+#include "blkdosem.h"
+#include "blkfdc.h"
+#include "blkqed.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 
-#include <drivers/psi/psi-img.h>
+#include <drivers/pfdc/pfdc-img.h>
 
 
 uint16_t dsk_get_uint16_be (const void *buf, unsigned i)
@@ -742,14 +740,6 @@ disk_t *dsk_auto_open (const char *fname, uint64_t ofs, int ro)
 {
 	unsigned type;
 
-	if (dsk_makeab_probe (fname)) {
-		return (dsk_makeab_open (fname, ro));
-	}
-
-	if (dsk_pbi_probe (fname)) {
-		return (dsk_pbi_open (fname, ro));
-	}
-
 	if (dsk_pce_probe (fname)) {
 		return (dsk_pce_open (fname, ro));
 	}
@@ -762,17 +752,17 @@ disk_t *dsk_auto_open (const char *fname, uint64_t ofs, int ro)
 		return (dsk_dosemu_open (fname, ro));
 	}
 
-	type = dsk_psi_probe (fname);
+	type = dsk_fdc_probe (fname);
 
-	if (type != PSI_FORMAT_NONE) {
-		return (dsk_psi_open (fname, type, ro));
+	if (type != PFDC_FORMAT_NONE) {
+		return (dsk_fdc_open (fname, type, ro));
 	}
 
-	type = psi_guess_type (fname);
+	type = pfdc_guess_type (fname);
 
-	if (type != PSI_FORMAT_NONE) {
-		if (type != PSI_FORMAT_RAW) {
-			return (dsk_psi_open (fname, type, ro));
+	if (type != PFDC_FORMAT_NONE) {
+		if (type != PFDC_FORMAT_RAW) {
+			return (dsk_fdc_open (fname, type, ro));
 		}
 	}
 
@@ -802,21 +792,6 @@ int dsk_read_lba (disk_t *dsk, void *buf, uint32_t i, uint32_t n)
 	}
 
 	return (1);
-}
-
-int dsk_read_lbaz (disk_t *dsk, void *buf, uint32_t i, uint32_t n)
-{
-	if ((i + n) <= dsk->blocks) {
-		return (dsk_read_lba (dsk, buf, i, n));
-	}
-
-	memset (buf, 0, 512 * n);
-
-	if (i < dsk->blocks) {
-		return (dsk_read_lba (dsk, buf, i, dsk->blocks - i));
-	}
-
-	return (0);
 }
 
 int dsk_read_chs (disk_t *dsk, void *buf,
@@ -855,36 +830,6 @@ int dsk_write_chs (disk_t *dsk, const void *buf,
 int dsk_commit (disk_t *dsk)
 {
 	return (dsk_set_msg (dsk, "commit", NULL));
-}
-
-disk_t *dsk_create_cow (disk_t *dsk, const char *name, unsigned long minblk)
-{
-	disk_t     *cow;
-	disk_pbi_t *pbi;
-
-	if ((minblk == 0) && (dsk->type == PCE_DISK_PBI)) {
-		pbi = dsk->ext;
-		minblk = pbi->block_size;
-	}
-
-	cow = dsk_pbi_cow_create (dsk, name, dsk->blocks, dsk->c, dsk->h, dsk->s, minblk);
-
-	return (cow);
-}
-
-disk_t *dsk_open_cow (disk_t *dsk, const char *name)
-{
-	disk_t *cow;
-
-	if ((cow = dsk_pbi_cow_open (dsk, name)) != NULL) {
-		return (cow);
-	}
-
-	if ((cow = dsk_qed_cow_open (dsk, name)) != NULL) {
-		return (cow);
-	}
-
-	return (NULL);
 }
 
 int dsk_get_msg (disk_t *dsk, const char *msg, char *val, unsigned max)

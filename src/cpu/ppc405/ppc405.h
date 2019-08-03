@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/cpu/ppc405/ppc405.h                                      *
  * Created:     2003-11-07 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2003-2015 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2003-2009 Hampa Hug <hampa@hampa.ch>                     *
  * Copyright:   (C) 2003-2006 Lukas Ruf <ruf@lpr.ch>                         *
  *****************************************************************************/
 
@@ -223,8 +223,6 @@ typedef struct {
 #define P405_SPRN_SRR2   0x3de
 #define P405_SPRN_SRR3   0x3df
 #define P405_SPRN_SU0R   0x3bc
-#define P405_SPRN_TBLU   0x10c
-#define P405_SPRN_TBUU   0x10d
 #define P405_SPRN_TBL    0x11c
 #define P405_SPRN_TBU    0x11d
 #define P405_SPRN_TCR    0x3da
@@ -410,7 +408,7 @@ typedef struct p405_s {
 
 	p405_tlb_t         tlb;
 
-	unsigned long      timer_extra_clock;
+	unsigned           timer_scale;
 
 	unsigned long      delay;
 
@@ -519,6 +517,13 @@ void p405_set_hook_fct (p405_t *c, void *ext, void *fct);
 
 
 /*!***************************************************************************
+ * @short Set the internal timer scale
+ * @param c     The cpu context
+ * @param scale The timer scale. The timer runs this much faster than the cpu.
+ *****************************************************************************/
+void p405_set_timer_scale (p405_t *c, unsigned scale);
+
+/*!***************************************************************************
  * @short Get the number of executed instructions
  *****************************************************************************/
 unsigned long long p405_get_opcnt (p405_t *c);
@@ -577,8 +582,6 @@ void p405_undefined (p405_t *c);
  * @short The external interrupt input signal
  *****************************************************************************/
 void p405_interrupt (p405_t *c, unsigned char val);
-
-void p405_add_timer_clock (p405_t *c, unsigned long cnt);
 
 void p405_reset (p405_t *c);
 void p405_execute (p405_t *c);

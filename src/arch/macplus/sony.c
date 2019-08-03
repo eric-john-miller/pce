@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/macplus/sony.c                                      *
  * Created:     2007-11-15 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2007-2013 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2007-2012 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -28,8 +28,7 @@
 #include <devices/memory.h>
 
 #include <drivers/block/block.h>
-#include <drivers/block/blkpsi.h>
-#include <drivers/psi/psi.h>
+#include <drivers/block/blkfdc.h>
 
 #include <lib/log.h>
 
@@ -614,7 +613,7 @@ int mac_sony_read_block (disk_t *dsk, void *buf, void *tag, unsigned long idx)
 	unsigned c, h, s;
 	unsigned cnt;
 
-	if (dsk_get_type (dsk) != PCE_DISK_PSI) {
+	if (dsk_get_type (dsk) != PCE_DISK_FDC) {
 		memset (tag, 0, 12);
 
 		if (dsk_read_lba (dsk, buf, idx, 1)) {
@@ -628,11 +627,11 @@ int mac_sony_read_block (disk_t *dsk, void *buf, void *tag, unsigned long idx)
 		return (1);
 	}
 
-	dsk_psi_read_tags (dsk->ext, tag, 12, c, h, s, 0);
+	dsk_fdc_read_tags (dsk->ext, tag, 12, c, h, s, 0);
 
 	cnt = 512;
 
-	if (dsk_psi_read_chs (dsk->ext, buf, &cnt, c, h, s, 0) != PCE_BLK_PSI_OK) {
+	if (dsk_fdc_read_chs (dsk->ext, buf, &cnt, c, h, s, 0) != PCE_BLK_FDC_OK) {
 		mac_log_deb ("sony: read error at %u/%u/%u\n", c, h, s);
 		return (1);
 	}
@@ -647,7 +646,7 @@ int mac_sony_write_block (disk_t *dsk, const void *buf, const void *tag, unsigne
 	unsigned type;
 	unsigned cnt;
 
-	if (dsk_get_type (dsk) != PCE_DISK_PSI) {
+	if (dsk_get_type (dsk) != PCE_DISK_FDC) {
 		if (dsk_write_lba (dsk, buf, idx, 1)) {
 			return (1);
 		}
@@ -662,12 +661,12 @@ int mac_sony_write_block (disk_t *dsk, const void *buf, const void *tag, unsigne
 	type = mac_sony_get_disk_type (dsk_get_block_cnt (dsk));
 
 	if ((type == 0) || (type == 1)) {
-		dsk_psi_write_tags (dsk->ext, tag, 12, c, h, s, 0);
+		dsk_fdc_write_tags (dsk->ext, tag, 12, c, h, s, 0);
 	}
 
 	cnt = 512;
 
-	if (dsk_psi_write_chs (dsk->ext, buf, &cnt, c, h, s, 0) != PCE_BLK_PSI_OK) {
+	if (dsk_fdc_write_chs (dsk->ext, buf, &cnt, c, h, s, 0) != PCE_BLK_FDC_OK) {
 		mac_log_deb ("sony: write error at %u/%u/%u\n", c, h, s);
 		return (1);
 	}
@@ -879,10 +878,10 @@ int mac_sony_format (disk_t *dsk, unsigned long blk)
 	unsigned      c, h, s, hn, sn;
 	unsigned      type;
 	unsigned char buf[512];
-	psi_sct_t     *sct;
-	disk_psi_t    *psi;
+	pfdc_sct_t    *sct;
+	disk_fdc_t    *fdc;
 
-	if (dsk_get_type (dsk) != PCE_DISK_PSI) {
+	if (dsk_get_type (dsk) != PCE_DISK_FDC) {
 		n = dsk_get_block_cnt (dsk);
 
 		if (n != blk) {
@@ -898,16 +897,16 @@ int mac_sony_format (disk_t *dsk, unsigned long blk)
 		return (0);
 	}
 
-	psi = dsk->ext;
+	fdc = dsk->ext;
 
 	memset (buf, 0, 12);
 
 	type = mac_sony_get_disk_type (blk);
 
-	dsk_psi_erase_disk (psi);
+	dsk_fdc_erase_disk (fdc);
 
 	if ((type == 0) || (type == 1)) {
-		dsk_psi_set_encoding (psi, PSI_ENC_GCR);
+		dsk_fdc_set_encoding (fdc, PFDC_ENC_GCR);
 
 		hn = (type == 0) ? 1 : 2;
 		sn = 13;
@@ -919,26 +918,26 @@ int mac_sony_format (disk_t *dsk, unsigned long blk)
 
 			for (h = 0; h < hn; h++) {
 				for (s = 0; s < sn; s++) {
-					dsk_psi_format_sector (psi, c, h, c, h, s, 512, 0);
+					dsk_fdc_format_sector (fdc, c, h, c, h, s, 512, 0);
 
-					sct = psi_img_get_sector (psi->img, c, h, s, 1);
+					sct = pfdc_img_get_sector (fdc->img, c, h, s, 1);
 
 					if (sct != NULL) {
-						psi_sct_set_tags (sct, buf, 12);
+						pfdc_sct_set_tags (sct, buf, 12);
 					}
 				}
 			}
 		}
 	}
 	else if ((type == 2) || (type == 3)) {
-		dsk_psi_set_encoding (psi, (type == 2) ? PSI_ENC_MFM_DD : PSI_ENC_MFM_HD);
+		dsk_fdc_set_encoding (fdc, (type == 2) ? PFDC_ENC_MFM_DD : PFDC_ENC_MFM_HD);
 
 		sn = (type == 2) ? 9 : 18;
 
 		for (c = 0; c < 80; c++) {
 			for (h = 0; h < 2; h++) {
 				for (s = 0; s < sn; s++) {
-					dsk_psi_format_sector (psi, c, h, c, h, s + 1, 512, 0);
+					dsk_fdc_format_sector (fdc, c, h, c, h, s + 1, 512, 0);
 				}
 			}
 		}
@@ -1059,7 +1058,7 @@ void mac_sony_ctl_format (mac_sony_t *sony)
 	else {
 		blk = dsk_get_block_cnt (dsk);
 
-		if (dsk_get_type (dsk) == PCE_DISK_PSI) {
+		if (dsk_get_type (dsk) == PCE_DISK_FDC) {
 			if (format == 1) {
 				blk = 800;
 			}
@@ -1328,7 +1327,7 @@ void mac_sony_status_format_list (mac_sony_t *sony)
 
 	list = sony->format_list;
 
-	if (dsk_get_type (dsk) == PCE_DISK_PSI) {
+	if (dsk_get_type (dsk) == PCE_DISK_FDC) {
 		sony->format_cnt = 4;
 
 		list[0] = 800;

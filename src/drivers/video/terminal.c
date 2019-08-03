@@ -485,10 +485,6 @@ int trm_set_key_magic (terminal_t *trm, pce_key_t key)
 		return (0);
 
 
-	case PCE_KEY_A:
-		trm_set_msg_trm (trm, "term.autosize", "");
-		return (0);
-
 	case PCE_KEY_F:
 		trm_set_msg_trm (trm, "term.fullscreen.toggle", "");
 		return (0);
@@ -572,6 +568,9 @@ void trm_set_key (terminal_t *trm, unsigned event, pce_key_t key)
 		}
 
 		if (trm->escape & TRM_ESC_ESC) {
+			if (key != trm->escape_key) {
+				trm_set_key_emu (trm, PCE_KEY_EVENT_MAGIC, key);
+			}
 			return;
 		}
 
@@ -598,7 +597,6 @@ void trm_set_key (terminal_t *trm, unsigned event, pce_key_t key)
 	else if (event == PCE_KEY_EVENT_UP) {
 		if (trm->escape & TRM_ESC_ESC) {
 			if (key != trm->escape_key) {
-				trm_set_key_emu (trm, PCE_KEY_EVENT_MAGIC, key);
 				trm->escape &= ~TRM_ESC_ESC;
 			}
 			return;
@@ -642,12 +640,6 @@ void trm_get_scale (terminal_t *trm, unsigned w, unsigned h, unsigned *fx, unsig
 	unsigned long f;
 	unsigned long w2, h2;
 	unsigned long maxw, maxh;
-
-	if ((w == 0) || (h == 0)) {
-		*fx = 0;
-		*fy = 0;
-		return;
-	}
 
 	f = 1;
 

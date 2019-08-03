@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/ibmpc/ibmpc.c                                       *
  * Created:     1999-04-16 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 1999-2017 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 1999-2012 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -21,7 +21,6 @@
 
 
 #include "main.h"
-#include "hook.h"
 #include "ibmpc.h"
 #include "m24.h"
 #include "msg.h"
@@ -75,9 +74,9 @@
 
 #define PCE_IBMPC_SLEEP 25000
 
-#ifndef CAS_SRATE
-#define CAS_SRATE 44100
-#endif
+
+void pc_e86_hook (void *ext, unsigned char op1, unsigned char op2);
+
 
 static char *par_intlog[256];
 
@@ -195,18 +194,14 @@ unsigned char pc_dma3_get_mem8 (ibmpc_t *pc, unsigned long addr)
 static
 unsigned char pc_ppi_get_port_a (ibmpc_t *pc)
 {
-	unsigned char val;
-
 	if (pc->ppi_port_b & 0x80) {
-		val = pc->ppi_port_a[0] & ~pc->switches1_msk;
-		val |= pc->switches1_val & pc->switches1_msk;
+		return (pc->ppi_port_a[0]);
 	}
 	else {
 		pc->ppi_port_a[1] = pc_kbd_get_key (&pc->kbd);
-		val = pc->ppi_port_a[1];
-	}
 
-	return (val);
+		return (pc->ppi_port_a[1]);
+	}
 }
 
 static
@@ -326,25 +321,6 @@ void pc_set_timer2_out (ibmpc_t *pc, unsigned char val)
 }
 
 static
-void pc_set_key (ibmpc_t *pc, unsigned event, unsigned key)
-{
-	if (event == PCE_KEY_EVENT_MAGIC) {
-		if (key == PCE_KEY_O) {
-			pc_set_msg (pc, "emu.video.composite.cycle", "");
-		}
-		else {
-			pce_log (MSG_INF, "unhandled magic key (%u)\n",
-				(unsigned) key
-			);
-		}
-
-		return;
-	}
-
-	pc_kbd_set_key (&pc->kbd, event, key);
-}
-
-static
 void pc_set_mouse (void *ext, int dx, int dy, unsigned button)
 {
 	chr_mouse_set (dx, dy, button);
@@ -392,22 +368,18 @@ static
 void pc_set_ram_size (ibmpc_t *pc, unsigned long cnt)
 {
 	if (pc->model & PCE_IBMPC_5150) {
-		pc->ppi_port_a[0] &= 0xf3;
-		pc->ppi_port_c[0] &= 0xf0;
-		pc->ppi_port_c[1] &= 0xfe;
-
-		if (cnt <= 65536) {
-			cnt = (cnt <= 16384) ? 0 : ((cnt - 16384) / 16384);
-
-			pc->ppi_port_a[0] |= (cnt & 3) << 2;
+		if (cnt < 65536) {
+			cnt = 0;
 		}
 		else {
 			cnt = (cnt - 65536) / 32768;
-
-			pc->ppi_port_a[0] |= 0x0c;
-			pc->ppi_port_c[0] |= cnt & 0x0f;
-			pc->ppi_port_c[1] |= (cnt >> 4) & 0x01;
 		}
+
+		pc->ppi_port_c[0] &= 0xf0;
+		pc->ppi_port_c[1] &= 0xfe;
+
+		pc->ppi_port_c[0] |= cnt & 0x0f;
+		pc->ppi_port_c[1] |= (cnt >> 4) & 0x01;
 	}
 	else if (pc->model & PCE_IBMPC_5160) {
 		cnt = cnt >> 16;
@@ -429,13 +401,10 @@ void pc_set_ram_size (ibmpc_t *pc, unsigned long cnt)
 static
 void pc_setup_system (ibmpc_t *pc, ini_sct_t *ini)
 {
-	unsigned   fdcnt, sw1val, sw1msk;
+	unsigned   fdcnt;
 	int        patch_init, patch_int19, memtest;
 	const char *model;
 	ini_sct_t  *sct;
-
-	pc->switches1_val = 0;
-	pc->switches1_msk = 0;
 
 	pc->fd_cnt = 0;
 	pc->hd_cnt = 0;
@@ -444,7 +413,6 @@ void pc_setup_system (ibmpc_t *pc, ini_sct_t *ini)
 
 	pc->brk = 0;
 	pc->pause = 0;
-	pc->trace = 0;
 
 	sct = ini_next_sct (ini, NULL, "system");
 
@@ -456,15 +424,13 @@ void pc_setup_system (ibmpc_t *pc, ini_sct_t *ini)
 	ini_get_uint16 (sct, "boot", &pc->bootdrive, 128);
 	ini_get_uint16 (sct, "floppy_disk_drives", &fdcnt, 2);
 	ini_get_bool (sct, "rtc", &pc->support_rtc, 1);
-	ini_get_uint16 (sct, "switches_1_val", &sw1val, 0);
-	ini_get_uint16 (sct, "switches_1_msk", &sw1msk, 0);
 	ini_get_bool (sct, "patch_bios_init", &patch_init, 1);
 	ini_get_bool (sct, "patch_bios_int19", &patch_int19, 1);
 	ini_get_bool (sct, "memtest", &memtest, 1);
 
 	pce_log_tag (MSG_INF, "SYSTEM:",
-		"model=%s floppies=%u sw1=%02X/%02X patch-init=%d patch-int19=%d\n",
-		model, fdcnt, sw1val, sw1msk, patch_init, patch_int19
+		"model=%s floppies=%u patch-init=%d patch-int19=%d\n",
+		model, fdcnt, patch_init, patch_int19
 	);
 
 	if (strcmp (model, "5150") == 0) {
@@ -491,9 +457,6 @@ void pc_setup_system (ibmpc_t *pc, ini_sct_t *ini)
 	pc->ppi_port_b = 0x08;
 	pc->ppi_port_c[0] = 0;
 	pc->ppi_port_c[1] = 0;
-
-	pc->switches1_val = sw1val & sw1msk;
-	pc->switches1_msk = sw1msk;
 
 	if (pc->model & PCE_IBMPC_5160) {
 		pc->ppi_port_c[0] |= 0x01;
@@ -620,9 +583,7 @@ void pc_setup_cpu (ibmpc_t *pc, ini_sct_t *ini)
 	}
 
 	pc->cpu->op_ext = pc;
-	pc->cpu->op_hook = pc_hook_old;
-
-	e86_set_hook_fct (pc->cpu, pc, pc_hook);
+	pc->cpu->op_hook = &pc_e86_hook;
 
 	pc->speed_current = speed;
 	pc->speed_saved = speed;
@@ -793,7 +754,7 @@ void pc_setup_cassette (ibmpc_t *pc, ini_sct_t *ini)
 {
 	const char    *fname;
 	const char    *mode;
-	unsigned long pos, pcmfreq;
+	unsigned long pos;
 	int           enable, append, pcm, filter;
 	ini_sct_t     *sct;
 
@@ -818,7 +779,6 @@ void pc_setup_cassette (ibmpc_t *pc, ini_sct_t *ini)
 	ini_get_string (sct, "file", &fname, NULL);
 	ini_get_string (sct, "mode", &mode, "load");
 	ini_get_uint32 (sct, "position", &pos, 0);
-	ini_get_uint32 (sct, "pcmfreq", &pcmfreq, 0);
 	ini_get_bool (sct, "append", &append, 0);
 	ini_get_bool (sct, "filter", &filter, 1);
 
@@ -827,9 +787,9 @@ void pc_setup_cassette (ibmpc_t *pc, ini_sct_t *ini)
 	}
 
 	pce_log_tag (MSG_INF, "CASSETTE:",
-		"file=%s mode=%s pcm=%d frequency=%lu filter=%d pos=%lu append=%d\n",
+		"file=%s mode=%s pcm=%d filter=%d pos=%lu append=%d\n",
 		(fname != NULL) ? fname : "<none>",
-		mode, pcm, pcmfreq, filter, pos, append
+		mode, pcm, filter, pos, append
 	);
 
 	pc->cas = pc_cas_new();
@@ -865,14 +825,6 @@ void pc_setup_cassette (ibmpc_t *pc, ini_sct_t *ini)
 	}
 
 	pc_cas_set_filter (pc->cas, filter);
-
-	if (pcmfreq) {
-		pc_cas_set_pcmfreq (pc->cas, pcmfreq);
-	}
-	else {
-		pcmfreq = CAS_SRATE;
-		pc_cas_set_pcmfreq (pc->cas, pcmfreq);
-	}
 }
 
 static
@@ -926,7 +878,7 @@ void pc_setup_terminal (ibmpc_t *pc, ini_sct_t *ini)
 		return;
 	}
 
-	trm_set_key_fct (pc->trm, pc, pc_set_key);
+	trm_set_key_fct (pc->trm, &pc->kbd, pc_kbd_set_key);
 	trm_set_mouse_fct (pc->trm, pc, pc_set_mouse);
 	trm_set_msg_fct (pc->trm, pc, pc_set_msg);
 }

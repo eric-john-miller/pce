@@ -300,7 +300,7 @@ video {
 	#   1 = thin font
 	font = 0
 
-	# The blink rate for blinking characters and the
+	# The blink frequency for blinking characters and the
 	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
@@ -318,7 +318,7 @@ video {
 	#color_bright = 0xfff0c8
 	#color_graphics = 0xfff0c8
 
-	# The blink rate for blinking characters and the
+	# The blink frequency for blinking characters and the
 	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
@@ -336,7 +336,7 @@ video {
 	#color_bright = 0xaaffaa
 	#color_graphics = 0xaaffaa
 
-	# The blink rate for blinking characters and the
+	# The blink frequency for blinking characters and the
 	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
@@ -345,13 +345,6 @@ video {
 	# Plantronics Colorplus
 	device = "plantronics"
 
-	# Select the text mode font:
-	#   0 = Thick font (default)
-	#   1 = Thin font
-	font = 0
-
-	# The blink rate for blinking characters and the
-	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
 
@@ -359,11 +352,6 @@ video {
 	# Olivetti M24
 	device = "olivetti"
 
-	# Set the monitor type to either color or mono.
-	mono = 0
-
-	# The blink rate for blinking characters and the
-	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
 
@@ -371,13 +359,6 @@ video {
 	# Wyse 700
 	device = "wy700"
 
-	# Select the text mode font:
-	#   0 = Thick font
-	#   1 = Thin font
-	font = 0
-
-	# The blink rate for blinking characters and the
-	# cursor. Setting this to 0 will turn off blinking.
 	blink = 16
 }
 

@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/macplus/scsi.c                                      *
  * Created:     2007-11-13 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2007-2014 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2007-2011 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -116,10 +116,6 @@ void mac_scsi_init (mac_scsi_t *scsi)
 	scsi->cmd_start = NULL;
 	scsi->cmd_finish = NULL;
 
-	scsi->set_int_val = 0;
-	scsi->set_int_ext = NULL;
-	scsi->set_int = NULL;
-
 	for (i = 0; i < 8; i++) {
 		scsi->dev[i].valid = 0;
 	}
@@ -130,12 +126,6 @@ void mac_scsi_init (mac_scsi_t *scsi)
 void mac_scsi_free (mac_scsi_t *scsi)
 {
 	free (scsi->buf);
-}
-
-void mac_scsi_set_int_fct (mac_scsi_t *scsi, void *ext, void *fct)
-{
-	scsi->set_int_ext = ext;
-	scsi->set_int = fct;
 }
 
 void mac_scsi_set_disks (mac_scsi_t *scsi, disks_t *dsks)
@@ -211,26 +201,6 @@ int mac_scsi_set_buf_max (mac_scsi_t *scsi, unsigned long max)
 	scsi->buf_max = max;
 
 	return (0);
-}
-
-static
-void mac_scsi_set_int (mac_scsi_t *scsi, int val)
-{
-	val = (val != 0);
-
-	if (scsi->set_int_val == val) {
-		return;
-	}
-
-#ifdef DEBUG_SCSI
-	mac_log_deb ("scsi: interrupt = %d\n", val != 0);
-#endif
-
-	scsi->set_int_val = val;
-
-	if (scsi->set_int != NULL) {
-		scsi->set_int (scsi->set_int_ext, val);
-	}
 }
 
 static
@@ -1012,7 +982,6 @@ unsigned char mac_scsi_get_uint8 (void *ext, unsigned long addr)
 		break;
 
 	case 0x07: /* RPI */
-		mac_scsi_set_int (scsi, 0);
 		val = 0xff;
 		break;
 
@@ -1226,7 +1195,6 @@ void mac_scsi_set_mr2 (mac_scsi_t *scsi, unsigned char val)
 
 			if (mac_scsi_get_disk (scsi) != NULL) {
 				mac_scsi_set_phase_cmd (scsi);
-				mac_scsi_set_int (scsi, 1);
 			}
 			else {
 				mac_scsi_set_phase_free (scsi);

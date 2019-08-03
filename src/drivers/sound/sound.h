@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/drivers/sound/sound.h                                    *
  * Created:     2009-10-17 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2009-2017 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2009-2010 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -31,8 +31,6 @@
 
 
 #define SND_CHN_MAX 16
-
-#define SND_OPT_NONBLOCK 1
 
 
 /*!***************************************************************************
@@ -65,8 +63,6 @@ typedef struct sound_drv_t {
 	int (*set_params) (struct sound_drv_t *sdrv,
 		unsigned chn, unsigned long srate, int sign
 	);
-
-	int (*set_opts) (struct sound_drv_t *sdrv, unsigned opts, int val);
 } sound_drv_t;
 
 
@@ -103,8 +99,6 @@ void snd_set_buf (unsigned char *dst, const uint16_t *src, unsigned long cnt,
 
 void snd_init (sound_drv_t *sdrv, void *ext);
 
-void snd_free (sound_drv_t *sdrv);
-
 void snd_close (sound_drv_t *sdrv);
 
 /*!***************************************************************************
@@ -136,8 +130,6 @@ int snd_write (sound_drv_t *sdrv, const uint16_t *buf, unsigned cnt);
  * to snd_write().
  *****************************************************************************/
 int snd_set_params (sound_drv_t *sdrv, unsigned chn, unsigned long srate, int sign);
-
-int snd_set_opts (sound_drv_t *sdrv, unsigned opts, int val);
 
 
 sound_drv_t *snd_open (const char *name);

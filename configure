@@ -627,7 +627,6 @@ PCE_DIR_ETC
 PCE_READLINE_LIBS
 PCE_ENABLE_READLINE
 PCE_ENABLE_SOUND_OSS
-PCE_ENABLE_CHAR_WINCOM
 PCE_ENABLE_CHAR_TIOS
 PCE_ENABLE_CHAR_TCP
 PCE_ENABLE_CHAR_SLIP
@@ -644,13 +643,9 @@ PCE_BUILD_MACPLUS_ROM
 PCE_BUILD_MACPLUS
 PCE_BUILD_IBMPC_ROM
 PCE_BUILD_IBMPC
-PCE_BUILD_CPM80
-PCE_BUILD_ATARIST
 PCE_LARGE_FILE
 PCE_SDL_LIBS
 PCE_SDL_CFLAGS
-PCE_ENABLE_SDL2
-PCE_ENABLE_SDL1
 PCE_ENABLE_SDL
 PCE_X11_LIBS
 PCE_X11_CFLAGS
@@ -741,9 +736,8 @@ ac_user_opts='
 enable_option_checking
 with_x
 with_sdl
+enable_static_sdl
 enable_largefile
-enable_atari_st
-enable_cpm80
 enable_ibmpc
 enable_ibmpc_rom
 enable_macplus
@@ -760,7 +754,6 @@ enable_char_pty
 enable_char_slip
 enable_char_tcp
 enable_char_termios
-enable_char_wincom
 enable_sound_oss
 enable_readline
 '
@@ -1389,9 +1382,8 @@ Optional Features:
   --disable-option-checking  ignore unrecognized --enable/--with options
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
+  --enable-static-sdl     Link to static SDL [no]
   --disable-largefile     Disable large file support [no]
-  --enable-atari-st       Enable the Atari ST emulator [yes]
-  --enable-cpm80          Enable the CPM-80 emulator [yes]
   --enable-ibmpc          Enable the IBM PC emulator [yes]
   --enable-ibmpc-rom      Build the IBM PC ROM from source [no]
   --enable-macplus        Enable the Mac Plus emulator [yes]
@@ -1408,7 +1400,6 @@ Optional Features:
   --enable-char-slip      Enable the SLIP character driver [guessed]
   --enable-char-tcp       Enable the TCP character driver [guessed]
   --enable-char-termios   Enable the termios character driver [guessed]
-  --enable-char-wincom    Enable the windows COM character driver [guessed]
   --enable-sound-oss      Enable the OSS sound driver driver [guessed]
   --enable-readline       Enable readline [guessed]
 
@@ -2229,9 +2220,32 @@ read p PCE_VERSION_MAJ PCE_VERSION_MIN PCE_VERSION_MIC dstr r < "$srcdir/version
 PCE_VERSION_STR=$dstr
 
 if test "x$dstr" = "xscm" ; then
-	if test -d "$srcdir/.git" ; then
+	if test -d "$srcdir/.svn" ; then
+		tmp=svninfo.$$.tmp
+		svn info "$srcdir" > "$tmp" 2> /dev/null
+
+		date=`date "+%Y-%m-%d"`
+		rev=""
+
+		while read a b c d e ; do
+			case "$a$b$c$d" in
+			"Revision:"*)
+				rev="$b"
+				;;
+			"LastChangedDate:"*)
+				date="$d"
+				;;
+			esac
+		done < "$tmp"
+
+		rm -f "$tmp"
+
+		test -n "$rev" && rev="-r$rev"
+		date=`echo "$date" | sed -e "s/-//g"`
+		PCE_VERSION_STR="$date$rev"
+	elif test -d "$srcdir/.git" ; then
 		tmp=gitlog.$$.tmp
-		( cd "$srcdir" && git log -1 --date=iso --abbrev=8 --pretty="format:%h %cd" HEAD ) > "$tmp" 2> /dev/null
+		( cd "$srcdir" && git log -1 --date=iso --pretty="format:%h %cd" HEAD ) > "$tmp" 2> /dev/null
 		read hash date time rest < "$tmp"
 		rm -f "$tmp"
 		date=`echo "$date" | sed -e "s/-//g"`
@@ -4153,7 +4167,7 @@ $as_echo "#define HAVE_FSEEKO 1" >>confdefs.h
 
 fi
 
-for ac_func in ftruncate futimes gettimeofday nanosleep sleep usleep
+for ac_func in ftruncate gettimeofday nanosleep sleep usleep
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
@@ -4608,47 +4622,30 @@ fi
 
 
 
-PCE_ENABLE_SDL=0
-PCE_ENABLE_SDL1=0
-PCE_ENABLE_SDL2=0
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for SDL" >&5
 $as_echo_n "checking for SDL... " >&6; }
 
 # Check whether --with-sdl was given.
 if test "${with_sdl+set}" = set; then :
   withval=$with_sdl;
-	case "$withval" in
-	"no")
+	if test "x$withval" = "xno" ; then
+		PCE_ENABLE_SDL=0
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (forced)" >&5
 $as_echo "no (forced)" >&6; }
-		;;
-	"1")
+	else
 		PCE_ENABLE_SDL=1
-		PCE_ENABLE_SDL1=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: 1 (forced)" >&5
-$as_echo "1 (forced)" >&6; }
-		;;
-	"2")
-		PCE_ENABLE_SDL=1
-		PCE_ENABLE_SDL2=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: 2 (forced)" >&5
-$as_echo "2 (forced)" >&6; }
-		;;
-	esac
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (forced)" >&5
+$as_echo "yes (forced)" >&6; }
+	fi
 
 else
 
-	if sdl2-config --version > /dev/null 2>&1 ; then
+	if sdl-config --version > /dev/null 2>&1 ; then
 		PCE_ENABLE_SDL=1
-		PCE_ENABLE_SDL2=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: 2 (detected)" >&5
-$as_echo "2 (detected)" >&6; }
-	elif sdl-config --version > /dev/null 2>&1 ; then
-		PCE_ENABLE_SDL=1
-		PCE_ENABLE_SDL1=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: 1 (detected)" >&5
-$as_echo "1 (detected)" >&6; }
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (detected)" >&5
+$as_echo "yes (detected)" >&6; }
 	else
+		PCE_ENABLE_SDL=0
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (detected)" >&5
 $as_echo "no (detected)" >&6; }
 	fi
@@ -4656,23 +4653,36 @@ $as_echo "no (detected)" >&6; }
 
 fi
 
-if test "x$PCE_ENABLE_SDL1" != "x0" ; then
-	PCE_SDL_CFLAGS=`sdl-config --cflags`
-	PCE_SDL_LIBS=`sdl-config --libs`
-	$as_echo "#define PCE_ENABLE_SDL 1" >>confdefs.h
+if test "x$PCE_ENABLE_SDL" != "x0" ; then
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for static SDL" >&5
+$as_echo_n "checking for static SDL... " >&6; }
+	# Check whether --enable-static-sdl was given.
+if test "${enable_static_sdl+set}" = set; then :
+  enableval=$enable_static_sdl;
+		if test "x$enableval" = "xyes" ; then
+			PCE_SDL_LIBS=`sdl-config --static-libs`
+			{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (forced)" >&5
+$as_echo "yes (forced)" >&6; }
+		else
+			PCE_SDL_LIBS=`sdl-config --libs`
+			{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (forced)" >&5
+$as_echo "no (forced)" >&6; }
+		fi
 
-	$as_echo "#define PCE_ENABLE_SDL1 1" >>confdefs.h
+else
 
-elif test "x$PCE_ENABLE_SDL2" != "x0" ; then
-	PCE_SDL_CFLAGS=`sdl2-config --cflags`
-	PCE_SDL_LIBS=`sdl2-config --libs`
-	$as_echo "#define PCE_ENABLE_SDL 1" >>confdefs.h
+  		PCE_SDL_LIBS=`sdl-config --libs`
+		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (default)" >&5
+$as_echo "no (default)" >&6; }
 
-	$as_echo "#define PCE_ENABLE_SDL2 1" >>confdefs.h
 
 fi
 
 
+	PCE_SDL_CFLAGS=`sdl-config --cflags`
+	$as_echo "#define PCE_ENABLE_SDL 1" >>confdefs.h
+
+fi
 
 
 
@@ -4704,68 +4714,6 @@ if test -d "$srcdir/src/arch/sim405"; then have_sim405=1; else have_sim405=0; fi
 if test -d "$srcdir/src/arch/sim6502"; then have_sim6502=1; else have_sim6502=0; fi
 if test -d "$srcdir/src/arch/simarm"; then have_simarm=1; else have_simarm=0; fi
 if test -d "$srcdir/src/arch/sims32"; then have_sims32=1; else have_sims32=0; fi
-
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build the Atari ST emulator" >&5
-$as_echo_n "checking whether to build the Atari ST emulator... " >&6; }
-# Check whether --enable-atari-st was given.
-if test "${enable_atari_st+set}" = set; then :
-  enableval=$enable_atari_st;
-		if test "x$enableval" = "xyes" ; then
-			PCE_BUILD_ATARIST=1
-			{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (forced)" >&5
-$as_echo "yes (forced)" >&6; }
-		else
-			PCE_BUILD_ATARIST=0
-			{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (forced)" >&5
-$as_echo "no (forced)" >&6; }
-		fi
-
-else
-
-		PCE_BUILD_ATARIST=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (default)" >&5
-$as_echo "yes (default)" >&6; }
-
-
-fi
-
-
-if test $PCE_BUILD_ATARIST -eq 1 ; then
-	$as_echo "#define PCE_BUILD_ATARIST 1" >>confdefs.h
-
-fi
-
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build the CPM-80 emulator" >&5
-$as_echo_n "checking whether to build the CPM-80 emulator... " >&6; }
-# Check whether --enable-cpm80 was given.
-if test "${enable_cpm80+set}" = set; then :
-  enableval=$enable_cpm80;
-	if test "x$enableval" = "xyes" ; then
-		PCE_BUILD_CPM80=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (forced)" >&5
-$as_echo "yes (forced)" >&6; }
-	else
-		PCE_BUILD_CPM80=0
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (forced)" >&5
-$as_echo "no (forced)" >&6; }
-	fi
-
-else
-
-	PCE_BUILD_CPM80=1
-	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (default)" >&5
-$as_echo "yes (default)" >&6; }
-
-
-fi
-
-
-if test "x$PCE_BUILD_CPM80" = "x1" ; then
-	$as_echo "#define PCE_BUILD_CPM80 1" >>confdefs.h
-
-fi
 
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build the IBM PC emulator" >&5
@@ -5359,43 +5307,6 @@ if test "x$PCE_ENABLE_CHAR_TIOS" = "x1" ; then
 fi
 
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to enable the windows COM character driver" >&5
-$as_echo_n "checking whether to enable the windows COM character driver... " >&6; }
-# Check whether --enable-char-wincom was given.
-if test "${enable_char_wincom+set}" = set; then :
-  enableval=$enable_char_wincom;
-	if test "x$enableval" = "xyes" ; then
-		PCE_ENABLE_CHAR_WINCOM=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-	else
-		PCE_ENABLE_CHAR_WINCOM=0
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-	fi
-
-else
-
-	if test "x$PCE_HOST_WINDOWS" = "x1" ; then
-		PCE_ENABLE_CHAR_WINCOM=1
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (guess)" >&5
-$as_echo "yes (guess)" >&6; }
-	else
-		PCE_ENABLE_CHAR_WINCOM=0
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no (guess)" >&5
-$as_echo "no (guess)" >&6; }
-	fi
-
-
-fi
-
-
-if test "x$PCE_ENABLE_CHAR_WINCOM" = "x1" ; then
-	$as_echo "#define PCE_ENABLE_CHAR_WINCOM 1" >>confdefs.h
-
-fi
-
-
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to enable the OSS sound driver" >&5
 $as_echo_n "checking whether to enable the OSS sound driver... " >&6; }
 # Check whether --enable-sound-oss was given.
@@ -5636,18 +5547,6 @@ _ACEOF
 emu1=""
 emu2=""
 
-if test "x$PCE_BUILD_ATARIST" = "x1" ; then
-	emu1="$emu1 atarist"
-else
-	emu2="$emu2 atarist"
-fi
-
-if test "x$PCE_BUILD_CPM80" = "x1" ; then
-	emu1="$emu1 cpm80"
-else
-	emu2="$emu2 cpm80"
-fi
-
 if test "x$PCE_BUILD_IBMPC" = "x1" ; then
 	emu1="$emu1 ibmpc"
 else
@@ -5716,16 +5615,10 @@ else
 	term2="$term2 x11"
 fi
 
-if test "x$PCE_ENABLE_SDL1" = "x1" ; then
-	term1="$term1 sdl1"
+if test "x$PCE_ENABLE_SDL" = "x1" ; then
+	term1="$term1 sdl"
 else
-	term2="$term2 sdl1"
-fi
-
-if test "x$PCE_ENABLE_SDL2" = "x1" ; then
-	term1="$term1 sdl2"
-else
-	term2="$term2 sdl2"
+	term2="$term2 sdl"
 fi
 
 
@@ -5766,12 +5659,6 @@ if test "x$PCE_ENABLE_CHAR_TIOS" = "x1" ; then
 	char1="$char1 termios"
 else
 	char2="$char2 termios"
-fi
-
-if test "x$PCE_ENABLE_CHAR_WINCOM" = "x1" ; then
-	char1="$char1 wincom"
-else
-	char2="$char2 wincom"
 fi
 
 

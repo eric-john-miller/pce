@@ -43,10 +43,10 @@ static mon_cmd_t par_cmd[] = {
 	{ "e", "addr [val|string...]", "enter bytes into memory" },
 	{ "f", "addr cnt [val...]", "find bytes in memory" },
 	{ "h", "", "print help" },
-	{ "load", "name [fmt] [a [n]]", "read a file into memory" },
+	{ "load", "name [f] [a [n]]", "read a file into memory" },
 	{ "m", "msg [val]", "send a message to the emulator core" },
 	{ "q", "", "quit" },
-	{ "save", "name [fmt] [a n...]", "write memory to a file" },
+	{ "save", "name [f] [a n...]", "read a file into memory" },
 	{ "v", "[expr...]", "evaluate expressions" },
 	{ "y", "src dst cnt", "copy memory" }
 };

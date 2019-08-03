@@ -5,7 +5,7 @@
 /*****************************************************************************
  * File name:   src/arch/ibmpc/msg.c                                         *
  * Created:     2004-09-25 by Hampa Hug <hampa@hampa.ch>                     *
- * Copyright:   (C) 2004-2018 Hampa Hug <hampa@hampa.ch>                     *
+ * Copyright:   (C) 2004-2011 Hampa Hug <hampa@hampa.ch>                     *
  *****************************************************************************/
 
 /*****************************************************************************
@@ -439,51 +439,6 @@ int pc_set_msg_emu_tape_pcm (ibmpc_t *pc, const char *msg, const char *val)
 }
 
 static
-int pc_set_msg_emu_tape_pcmfreq (ibmpc_t *pc, const char *msg, const char *val)
-{
-	int pcmfreq;
-
-	if (pc->cas == NULL) {
-		return (1);
-	}
-
-	if (msg_get_uint (val, &pcmfreq)) {
-		return (1);
-	}
-
-	pc_cas_set_pcm (pc->cas, pcmfreq);
-
-	pc_cas_print_state (pc->cas);
-
-	return (0);
-}
-
-static
-int pc_set_msg_emu_tape_read (ibmpc_t *pc, const char *msg, const char *val)
-{
-	if (pc->cas == NULL) {
-		return (1);
-	}
-
-	if (*val == 0) {
-		val = NULL;
-	}
-
-	if (pc_cas_set_fname (pc->cas, val)) {
-		return (1);
-	}
-
-	pc_cas_set_mode (pc->cas, 0);
-
-	if (pc_cas_set_position (pc->cas, 0)) {
-		return (1);
-	}
-
-	pc_cas_print_state (pc->cas);
-
-	return (0);
-}
-static
 int pc_set_msg_emu_tape_rewind (ibmpc_t *pc, const char *msg, const char *val)
 {
 	if (pc->cas == NULL) {
@@ -539,32 +494,6 @@ int pc_set_msg_emu_tape_state (ibmpc_t *pc, const char *msg, const char *val)
 	return (0);
 }
 
-static
-int pc_set_msg_emu_tape_write (ibmpc_t *pc, const char *msg, const char *val)
-{
-	if (pc->cas == NULL) {
-		return (1);
-	}
-
-	if (*val == 0) {
-		val = NULL;
-	}
-
-	if (pc_cas_set_fname (pc->cas, val)) {
-		return (1);
-	}
-
-	pc_cas_set_mode (pc->cas, 1);
-
-	if (pc_cas_set_position (pc->cas, 0)) {
-		return (1);
-	}
-
-	pc_cas_print_state (pc->cas);
-
-	return (0);
-}
-
 
 static pc_msg_list_t set_msg_list[] = {
 	{ "emu.config.save", pc_set_msg_emu_config_save },
@@ -588,14 +517,11 @@ static pc_msg_list_t set_msg_list[] = {
 	{ "emu.tape.append", pc_set_msg_emu_tape_append },
 	{ "emu.tape.filter", pc_set_msg_emu_tape_filter },
 	{ "emu.tape.file", pc_set_msg_emu_tape_file },
-	{ "emu.tape.pcmfreq", pc_set_msg_emu_tape_pcmfreq },
 	{ "emu.tape.load", pc_set_msg_emu_tape_load },
 	{ "emu.tape.pcm", pc_set_msg_emu_tape_pcm },
-	{ "emu.tape.read", pc_set_msg_emu_tape_read },
 	{ "emu.tape.rewind", pc_set_msg_emu_tape_rewind },
 	{ "emu.tape.save", pc_set_msg_emu_tape_save },
 	{ "emu.tape.state", pc_set_msg_emu_tape_state },
-	{ "emu.tape.write", pc_set_msg_emu_tape_write },
 	{ NULL, NULL }
 };
 

@@ -29,8 +29,7 @@
 
 
 /* 10 bits at 31250 bps */
-#define PC_KBD_DELAY   (PCE_IBMPC_CLK2 / (31250 / 10))
-#define PC_KBD_TIMEOUT (64 * PC_KBD_DELAY)
+#define PC_KBD_DELAY (PCE_IBMPC_CLK2 / (31250 / 10))
 
 
 typedef struct {
@@ -152,7 +151,6 @@ static pc_keymap_t keymap[] = {
 void pc_kbd_init (pc_kbd_t *kbd)
 {
 	kbd->delay = PC_KBD_DELAY;
-	kbd->timeout = 0;
 
 	kbd->key = 0;
 	kbd->key_valid = 0;
@@ -195,14 +193,11 @@ void pc_kbd_reset (pc_kbd_t *kbd)
 	}
 
 	kbd->delay = PC_KBD_DELAY;
-	kbd->timeout = PC_KBD_TIMEOUT;
 	kbd->key = 0x55;
 
 	kbd->key_i = 0;
 	kbd->key_j = 1;
 	kbd->key_buf[0] = 0xaa;
-
-	pc_kbd_set_irq (kbd, 0);
 }
 
 void pc_kbd_set_clk (pc_kbd_t *kbd, unsigned char val)
@@ -232,7 +227,6 @@ void pc_kbd_set_enable (pc_kbd_t *kbd, unsigned char val)
 
 	if (val) {
 		kbd->delay = PC_KBD_DELAY;
-		kbd->delay = PC_KBD_TIMEOUT;
 	}
 	else {
 		kbd->key = 0x00;
@@ -325,17 +319,7 @@ void pc_kbd_clock (pc_kbd_t *kbd, unsigned long cnt)
 	}
 
 	if (kbd->key_valid) {
-		if (kbd->timeout == 0) {
-			return;
-		}
-
-		if (kbd->timeout > cnt) {
-			kbd->timeout -= cnt;
-			return;
-		}
-
-		kbd->timeout = 0;
-		kbd->key_valid = 0;
+		return;
 	}
 
 	if (kbd->delay > cnt) {
@@ -344,13 +328,11 @@ void pc_kbd_clock (pc_kbd_t *kbd, unsigned long cnt)
 	}
 
 	kbd->delay = PC_KBD_DELAY;
-	kbd->delay = PC_KBD_TIMEOUT;
 
 	kbd->key = kbd->key_buf[kbd->key_i];
 	kbd->key_valid = 1;
 
 	kbd->key_i = (kbd->key_i + 1) % PC_KBD_BUF;
 
-	pc_kbd_set_irq (kbd, 0);
 	pc_kbd_set_irq (kbd, 1);
 }
